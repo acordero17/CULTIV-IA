@@ -14,10 +14,6 @@ from dotenv import load_dotenv
 # Obtener API key desde Streamlit Secrets
 api_key = st.secrets["OPENWEATHER_API_KEY"]
 
-load_dotenv()
-
-api_key = os.getenv("OPENWEATHER_API_KEY")
-
 # 🔥 carga tu dataset real
 df_suelos = pd.read_csv("modelos/suelos.csv")
 
