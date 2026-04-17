@@ -72,7 +72,7 @@ def obtener_forecast(lat, lon):
     params = {
         "lat": lat,
         "lon": lon,
-        "appid": API_KEY,
+        "appid": api_key,
         "units": "metric"
     }
 
