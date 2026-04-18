@@ -147,3 +147,13 @@ def recomendar_cultivos(input_base, top_n=None):
     df_res = df_res.sort_values(by="score", ascending=False)
 
     return df_res, cluster
+def predecir_cultivo(input_dict, cultivo):
+
+    input_dict = input_dict.copy()
+    input_dict["nomcultivo"] = cultivo
+
+    df = preparar_input_modelo(input_dict)
+
+    pred = model_reg.predict(df)[0]
+
+    return float(pred)
