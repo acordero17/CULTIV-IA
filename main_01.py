@@ -2,8 +2,33 @@ import streamlit as st
 import requests
 import pandas as pd
 import unicodedata
-
 from utils import recomendar_cultivos
+from openai import OpenAI
+
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+def preguntar_llm(prompt):
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": """
+Eres un ingeniero agrónomo experto en México.
+
+Das recomendaciones claras, prácticas y accionables.
+Usas clima, rendimiento y riesgo para tomar decisiones.
+"""
+            },
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.4,
+        max_tokens=300
+    )
+
+    return response.choices[0].message.content
+
 
 # =========================
 # CONFIG
@@ -357,6 +382,85 @@ if st.session_state.df_res is not None:
         c1.metric("📈 Rendimiento (ton/ha)", f"{row_new['rendimiento']:.1f}")
         c2.metric("⚠️ Riesgo", f"{row_new['riesgo']:.1f}")
         c3.metric("🧠 Score", f"{row_new['score']:.1f}")
+
+    # =========================
+    # 🧠 ASESOR AGRÍCOLA
+    # =========================
+
+    st.markdown("---")
+    st.subheader("🧠 Asesor agrícola")
+
+    decision = st.radio(
+        "¿Ya seleccionaste un cultivo o necesitas ayuda para decidir?",
+        ["❓ Necesito ayuda para decidir", "✅ Ya elegí un cultivo"],
+        horizontal=True
+    )
+
+    # 🔍 AYUDA PARA DECIDIR
+    if decision == "❓ Necesito ayuda para decidir":
+
+        if st.button("🧠 Ayúdame a decidir"):
+
+            top = df_res.head(3)
+
+            prompt = f"""
+    Ubicación: {municipio}, {estado}
+
+    Clima actual:
+    Temperatura: {actual['temp']} °C
+    Lluvia: {actual['precip']} mm
+
+    Clima histórico:
+    Temperatura promedio: {clima['temp_avg']} °C
+    Precipitación anual: {clima['precip_total']} mm
+
+    Opciones:
+    {top[['cultivo','rendimiento','riesgo','score']].to_string()}
+
+    Recomienda el mejor cultivo, explica por qué,
+    cuál es más rentable, cuál más seguro y riesgos clave.
+    """
+
+            with st.spinner("🧠 Analizando decisión..."):
+                respuesta = preguntar_llm(prompt)
+
+            st.markdown("### 🧠 Recomendación del experto")
+            st.write(respuesta)
+
+    # 🌱 YA ELIGIÓ
+    else:
+
+        cultivo_final = st.selectbox("🌱 ¿Qué cultivo elegiste?", df_res["cultivo"])
+
+        if st.button("📘 Analizar cultivo"):
+
+            row = df_res[df_res["cultivo"] == cultivo_final].iloc[0]
+
+            prompt = f"""
+    Cultivo: {cultivo_final}
+    Ubicación: {municipio}, {estado}
+
+    Condiciones actuales:
+    Temperatura: {actual['temp']} °C
+    Precipitación anual: {clima['precip_total']} mm
+
+    Rendimiento esperado: {row['rendimiento']}
+    Riesgo: {row['riesgo']}
+
+    Explica:
+    - condiciones óptimas
+    - qué tan adecuadas son las actuales
+    - plagas comunes
+    - recomendaciones prácticas
+
+    Termina con una pregunta para el usuario.
+    """
+
+            with st.spinner("🌱 Analizando cultivo..."):
+                respuesta = preguntar_llm(prompt)
+
+            st.markdown("### 🌱 Análisis del cultivo")
+            st.write(respuesta)
 
     # 🔄 RESET
     st.markdown("---")
