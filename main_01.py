@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 import unicodedata
 
-from utils import recomendar_cultivos, predecir_cultivo
+from utils import recomendar_cultivos_fast, predecir_con_incertidumbre
 
 # =========================
 # CONFIG
@@ -189,7 +189,8 @@ if st.button("Analizar"):
 
         input_dict.update(suelo)
 
-        df_res, cluster = recomendar_cultivos(input_dict)
+        # 🔥 rápido
+        df_res, cluster = recomendar_cultivos_fast(input_dict)
 
         st.session_state.df_res = df_res
         st.session_state.cluster = cluster
@@ -241,14 +242,12 @@ if st.session_state.df_res is not None:
         col2.metric("⚠️ Riesgo", f"{row['riesgo']:.1f}")
         col3.metric("🧠 Score", f"{row['score']:.1f}")
 
-        st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
-
     # =========================
-    # WHAT IF RÁPIDO
+    # WHAT IF (RÁPIDO)
     # =========================
 
     st.markdown("---")
-    st.subheader("🧪 Simulación rápida por cultivo")
+    st.subheader("🧪 Simulación por cultivo")
 
     cultivo_sel = st.selectbox("Selecciona cultivo", df_res["cultivo"].unique())
 
@@ -260,24 +259,28 @@ if st.session_state.df_res is not None:
     with col2:
         delta_precip = st.slider("Precipitación (%)", -50, 50, 0)
 
-    input_sim = input_dict.copy()
+    if st.button("Simular escenario"):
 
-    input_sim["temp_avg"] += delta_temp
-    input_sim["temp_min"] += delta_temp
-    input_sim["temp_max"] += delta_temp
-    input_sim["precip_total"] *= (1 + delta_precip / 100)
+        input_sim = input_dict.copy()
 
-    base_row = df_res[df_res["cultivo"] == cultivo_sel].iloc[0]
-    base_val = base_row["rendimiento"]
+        input_sim["temp_avg"] += delta_temp
+        input_sim["temp_min"] += delta_temp
+        input_sim["temp_max"] += delta_temp
+        input_sim["precip_total"] *= (1 + delta_precip / 100)
 
-    sim_val = predecir_cultivo(input_sim, cultivo_sel)
+        with st.spinner("Calculando..."):
+            resultado = predecir_con_incertidumbre(input_sim, cultivo_sel)
 
-    delta = sim_val - base_val
+        base_row = df_res[df_res["cultivo"] == cultivo_sel].iloc[0]
+        base_val = base_row["rendimiento"]
 
-    col1, col2, col3 = st.columns(3)
+        sim_val = resultado["mean"]
+        delta = sim_val - base_val
 
-    col1.metric("Base", f"{base_val:.1f}")
-    col2.metric("Simulado", f"{sim_val:.1f}")
-    col3.metric("Cambio", f"{delta:.1f}")
+        col1, col2, col3 = st.columns(3)
 
-    st.caption("Simulación individual para análisis rápido ⚡")
+        col1.metric("Base", f"{base_val:.1f}")
+        col2.metric("Simulado", f"{sim_val:.1f}", delta=f"{delta:+.1f}")
+        col3.metric("Riesgo", f"{resultado['riesgo']:.1f}")
+
+        st.caption(f"Rango esperado: {resultado['low']:.1f} – {resultado['high']:.1f}")
