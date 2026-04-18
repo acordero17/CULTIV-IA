@@ -78,10 +78,7 @@ def clasificar_rendimiento(r):
 # 🚀 MAIN
 # =========================
 
-def recomendar_cultivos(input_base, top_n=None):
-
-    import numpy as np
-    import random
+def recomendar_cultivos_fast(input_base):
 
     resultados = []
 
@@ -95,39 +92,18 @@ def recomendar_cultivos(input_base, top_n=None):
 
             df = preparar_input_modelo(input_dict)
 
-            # 🔥 BOOTSTRAPPING DE ÁRBOLES
-            preds = []
-
-            for _ in range(100):  # número de simulaciones
-                sampled_trees = random.choices(model_reg.estimators_, k=15)
-
-                pred = np.mean([tree.predict(df)[0] for tree in sampled_trees])
-                preds.append(pred)
-
-            # 📊 métricas
-            mean = float(np.mean(preds))
-            std = float(np.std(preds))
-
-            # 🔒 intervalo más realista
-            low = max(0, mean - std)
-            high = mean + std
-
-            riesgo = std  # más interpretable
-            score = mean - std  # balance simple y estable
-
-            clase = clasificar_rendimiento(mean)
-            tipo = obtener_tipo_cultivo(cultivo)
+            pred = float(model_reg.predict(df)[0])
 
             resultados.append({
                 "cultivo": cultivo,
-                "tipo_cultivo": tipo,
-                "rendimiento": mean,
-                "low": low,
-                "high": high,
-                "riesgo": riesgo,
-                "clasificacion": clase,
-                "cluster": cluster,
-                "score": score
+                "tipo_cultivo": obtener_tipo_cultivo(cultivo),
+                "rendimiento": pred,
+                "score": pred,
+                "clasificacion": clasificar_rendimiento(pred),
+                "riesgo": 0,
+                "low": pred,
+                "high": pred,
+                "cluster": cluster
             })
 
         except Exception as e:
@@ -135,18 +111,8 @@ def recomendar_cultivos(input_base, top_n=None):
 
     df_res = pd.DataFrame(resultados)
 
-    if df_res.empty:
-        return None, cluster
-
-    # asegurar tipos
-    cols = ["rendimiento", "low", "high", "riesgo", "score"]
-    for col in cols:
-        df_res[col] = pd.to_numeric(df_res[col], errors="coerce")
-
-    # orden base por score
-    df_res = df_res.sort_values(by="score", ascending=False)
-
-    return df_res, cluster
+    return df_res.sort_values(by="rendimiento", ascending=False), cluster
+    
 def predecir_cultivo(input_dict, cultivo):
 
     input_dict = input_dict.copy()
