@@ -14,7 +14,7 @@ st.set_page_config(page_title="Cultiv-IA", layout="wide")
 api_key = st.secrets["OPENWEATHER_API_KEY"]
 
 # =========================
-# RESET SEGURO (evita bugs viejos)
+# RESET SEGURO
 # =========================
 
 if "ubicacion_data" in st.session_state:
@@ -179,7 +179,7 @@ ubicacion = st.text_input("📍 Ubicación", "Texcoco, México")
 
 if st.button("Analizar"):
 
-    st.session_state.df_res = None  # 🔥 recalcular
+    st.session_state.df_res = None
 
     with st.spinner("🌱 Analizando condiciones..."):
 
@@ -215,7 +215,6 @@ if st.button("Analizar"):
 
         df_res, cluster = recomendar_cultivos(input_dict)
 
-        # ✅ guardar como dict (pro)
         st.session_state.df_res = df_res
         st.session_state.cluster = cluster
         st.session_state.ubicacion_data = {
@@ -229,7 +228,7 @@ if st.button("Analizar"):
 
 if st.session_state.df_res is not None:
 
-    df_res = st.session_state.df_res
+    df_res = st.session_state.df_res.copy()
     cluster = st.session_state.cluster
 
     ubicacion_data = st.session_state.ubicacion_data
@@ -250,7 +249,31 @@ if st.session_state.df_res is not None:
     st.subheader("🌍 Tipo de municipio")
     st.success(cluster_map.get(cluster, cluster))
 
-    # 🎛️ selector
+    # =========================
+    # 🎛️ FILTRO TIPO CULTIVO
+    # =========================
+
+    st.subheader("🎛️ Filtrar recomendaciones")
+
+    tipos_disponibles = sorted(df_res["tipo_cultivo"].unique().tolist())
+
+    tipo_seleccionado = st.multiselect(
+        "🌱 Tipo de cultivo",
+        ["Todos"] + tipos_disponibles,
+        default=["Todos"]
+    )
+
+    if "Todos" not in tipo_seleccionado:
+        df_res = df_res[df_res["tipo_cultivo"].isin(tipo_seleccionado)]
+
+    if df_res.empty:
+        st.warning("No hay cultivos disponibles para ese filtro")
+        st.stop()
+
+    # =========================
+    # 🔀 MODO
+    # =========================
+
     modo = st.radio(
         "¿Qué prefieres?",
         ["🌾 Mayor rendimiento", "🧠 Mayor estabilidad"],
@@ -264,7 +287,10 @@ if st.session_state.df_res is not None:
 
     top5 = df_res.head(5)
 
+    # =========================
     # 🧱 CARDS
+    # =========================
+
     for i, (_, row) in enumerate(top5.iterrows(), 1):
 
         st.markdown(f"""
