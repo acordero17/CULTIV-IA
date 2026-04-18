@@ -3,11 +3,10 @@ import requests
 import pandas as pd
 import unicodedata
 
-from utils import recomendar_cultivos
-
-# =========================
-# CONFIG
-# =========================
+from utils import (
+    recomendar_cultivos,
+    obtener_descripcion_cluster
+)
 
 st.set_page_config(page_title="Cultiv-IA", layout="wide")
 
@@ -112,7 +111,7 @@ def obtener_clima_actual(lat, lon):
         "precip": data.get("rain", {}).get("1h", 0)
     }
 
-# 🌍 NASA (PROMEDIO REAL)
+# 🌍 NASA
 @st.cache_data(ttl=86400)
 def obtener_climatologia(lat, lon):
 
@@ -155,8 +154,6 @@ def obtener_climatologia(lat, lon):
         return None
 
     temp_avg = sum(temps) / len(temps)
-
-    # 🔥 PROMEDIO ANUAL
     precip_total = sum(precip) / (len(precip) / 365)
 
     return {
@@ -167,6 +164,7 @@ def obtener_climatologia(lat, lon):
 # 📍 GEOCODING
 @st.cache_data(ttl=3600)
 def obtener_datos_ubicacion(ubicacion):
+
     url = "https://api.opencagedata.com/geocode/v1/json"
 
     params = {
@@ -196,7 +194,7 @@ def extraer_municipio(data):
     return municipio, estado
 
 # =========================
-# UI HEADER
+# HEADER
 # =========================
 
 col1, col2 = st.columns([1, 5])
@@ -234,25 +232,24 @@ if st.button("Analizar"):
     lat = data["lat"]
     lon = data["lon"]
 
-    status.info("🌦️ Obteniendo clima actual...")
+    status.info("🌦️ Clima actual...")
     actual = obtener_clima_actual(lat, lon)
 
-    status.info("🌍 Obteniendo climatología...")
+    status.info("🌍 Clima histórico...")
     clima = obtener_climatologia(lat, lon)
 
     if clima is None:
-        st.warning("No se pudo obtener histórico, usando fallback")
+        st.warning("Fallback clima actual")
         clima = {
             "temp_avg": actual["temp"],
             "precip_total": actual["precip"] * 365
         }
 
-    status.info("🌱 Analizando suelo...")
+    status.info("🌱 Suelo...")
     suelo = obtener_suelo(municipio)
 
-    status.info("🧠 Ejecutando modelo...")
+    status.info("🧠 Modelo...")
 
-    # 🔥 mezcla
     temp_final = clima["temp_avg"] + (actual["temp"] - clima["temp_avg"]) * 0.3
 
     input_dict = {
@@ -278,7 +275,8 @@ if st.button("Analizar"):
         "municipio": municipio,
         "estado": estado,
         "actual": actual,
-        "clima": clima
+        "clima": clima,
+        "input_dict": input_dict
     }
 
 # =========================
@@ -289,24 +287,47 @@ if st.session_state.df_res is not None:
 
     data = st.session_state.ubicacion_data
     df_res = st.session_state.df_res
+    cluster = st.session_state.cluster
+
+    actual = data.get("actual")
+    clima = data.get("clima")
 
     st.success(f"{data['municipio']}, {data['estado']}")
 
     # 🌦️ ACTUAL
     st.subheader("🌦️ Condición actual")
-
     col1, col2 = st.columns(2)
-    col1.metric("🌡️ Temperatura actual", f"{data['actual']['temp']:.1f} °C")
-    col2.metric("🌧️ Lluvia actual", f"{data['actual']['precip']:.1f} mm")
+    col1.metric("🌡️ Temperatura actual", f"{actual['temp']:.1f} °C")
+    col2.metric("🌧️ Lluvia actual", f"{actual['precip']:.1f} mm")
 
     # 🌍 HISTÓRICO
     st.subheader("🌍 Climatología histórica (2018–2023)")
-
     col1, col2 = st.columns(2)
-    col1.metric("🌡️ Temp promedio", f"{data['clima']['temp_avg']:.1f} °C")
-    col2.metric("🌧️ Precipitación anual", f"{data['clima']['precip_total']:.0f} mm")
+    col1.metric("🌡️ Temp promedio", f"{clima['temp_avg']:.1f} °C")
+    col2.metric("🌧️ Precipitación anual", f"{clima['precip_total']:.0f} mm")
 
-    st.info("🧠 Score = rendimiento esperado - riesgo")
+    # 🧠 CLUSTER (TU MAPPING)
+    st.subheader("🧠 Tipo de municipio")
+    desc = obtener_descripcion_cluster(cluster)
+
+    st.markdown(f"""
+    <div class="card">
+        <p>{desc}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 🎛️ SELECTOR
+    st.subheader("📊 Ordenar por")
+
+    opcion = st.radio("", ["Score", "Rendimiento"], horizontal=True)
+
+    if opcion == "Score":
+        df_res = df_res.sort_values("score", ascending=False)
+    else:
+        df_res = df_res.sort_values("rendimiento", ascending=False)
+
+    # 🌱 RESULTADOS
+    st.subheader("🌱 Mejores cultivos")
 
     top5 = df_res.head(5)
 
@@ -325,8 +346,37 @@ if st.session_state.df_res is not None:
         col2.metric("⚠️ Riesgo", f"{row['riesgo']:.1f}")
         col3.metric("🧠 Score", f"{row['score']:.1f}")
 
-        st.caption(f"Rango (ton/ha): {row['low']:.1f} – {row['high']:.1f}")
+        st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
 
+    # 🔬 WHAT IF
+    st.subheader("🔬 What-if")
+
+    cultivo_sel = st.selectbox("Cultivo", df_res["cultivo"].values)
+
+    temp_delta = st.slider("Temperatura (°C)", -5.0, 5.0, 0.0)
+    precip_delta = st.slider("Precipitación (%)", -50, 50, 0)
+
+    if st.button("Simular"):
+
+        input_mod = data["input_dict"].copy()
+
+        input_mod["temp_avg"] += temp_delta
+        input_mod["temp_max"] += temp_delta
+        input_mod["temp_min"] += temp_delta
+        input_mod["precip_total"] *= (1 + precip_delta / 100)
+
+        df_new, _ = recomendar_cultivos(input_mod)
+
+        row_new = df_new[df_new["cultivo"] == cultivo_sel].iloc[0]
+
+        st.markdown("### Resultado")
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Rendimiento", f"{row_new['rendimiento']:.1f}")
+        col2.metric("Riesgo", f"{row_new['riesgo']:.1f}")
+        col3.metric("Score", f"{row_new['score']:.1f}")
+
+    # RESET
     if st.button("🔄 Probar otra ubicación"):
         st.session_state.clear()
         st.rerun()
