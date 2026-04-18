@@ -178,8 +178,8 @@ if st.button("Analizar"):
 
         input_dict = {
             "temp_avg": forecast["temp_avg"],
-            "temp_max": forecast["temp_avg"],
             "temp_min": forecast["temp_avg"],
+            "temp_max": forecast["temp_avg"],
             "precip_total": precip_total,
             "precip_avg": precip_avg,
             "nomestado": "MEXICO",
@@ -194,7 +194,7 @@ if st.button("Analizar"):
         st.session_state.df_res = df_res
         st.session_state.cluster = cluster
         st.session_state.ubicacion_data = (municipio, estado, lat, lon)
-        st.session_state.input_base = input_dict  # 🔥 importante para simulación
+        st.session_state.input_base = input_dict
 
 # =========================
 # RESULTADOS
@@ -208,20 +208,9 @@ if st.session_state.df_res is not None:
     input_dict = st.session_state.input_base
 
     st.success(f"{municipio}, {estado}")
-
     st.map(pd.DataFrame({"lat": [lat], "lon": [lon]}))
 
-    cluster_map = {
-        0: "Zona agrícola de alto potencial",
-        1: "Zona productiva tecnificada",
-        2: "Zona de bajo rendimiento por suelo",
-        3: "Zona con suelo arcilloso",
-        4: "Zona húmeda de bajo rendimiento"
-    }
-
-    st.subheader("🌍 Tipo de municipio")
-    st.success(cluster_map.get(cluster, cluster))
-
+    # selector
     modo = st.radio(
         "¿Qué prefieres?",
         ["🌾 Mayor rendimiento", "🧠 Mayor estabilidad"],
@@ -241,8 +230,6 @@ if st.session_state.df_res is not None:
 
     for i, (_, row) in enumerate(top5.iterrows(), 1):
 
-        riesgo = row["riesgo"]
-
         st.markdown(f"""
         <div class="card">
             <h3>#{i} 🌱 {row['cultivo']}</h3>
@@ -253,34 +240,49 @@ if st.session_state.df_res is not None:
         col1, col2, col3 = st.columns(3)
 
         col1.metric("📈 Rendimiento", f"{row['rendimiento']:.1f}")
-        col2.metric("⚠️ Riesgo", f"{riesgo:.1f}")
+        col2.metric("⚠️ Riesgo", f"{row['riesgo']:.1f}")
         col3.metric("🧠 Score", f"{row['score']:.1f}")
 
         st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
 
     # =========================
-    # WHAT IF
+    # WHAT IF PRO
     # =========================
 
     st.markdown("---")
-    st.subheader("🧪 What-if Agronómico")
+    st.subheader("🧪 Simulación Agronómica")
+
+    escenario = st.selectbox(
+        "Escenario climático",
+        ["Base", "🌵 Sequía", "🔥 Ola de calor", "🌧️ Lluvias intensas"]
+    )
 
     col1, col2 = st.columns(2)
 
     with col1:
-        delta_temp = st.slider("🌡️ Temperatura (°C)", -10, 10, 0)
+        delta_temp = st.slider("Temperatura (°C)", -10, 10, 0)
 
     with col2:
-        delta_precip = st.slider("🌧️ Precipitación (%)", -50, 50, 0)
+        delta_precip = st.slider("Precipitación (%)", -50, 50, 0)
 
     input_sim = input_dict.copy()
 
+    if escenario == "🌵 Sequía":
+        input_sim["precip_total"] *= 0.6
+
+    elif escenario == "🔥 Ola de calor":
+        input_sim["temp_avg"] += 5
+        input_sim["temp_min"] += 5
+        input_sim["temp_max"] += 5
+
+    elif escenario == "🌧️ Lluvias intensas":
+        input_sim["precip_total"] *= 1.5
+
     input_sim["temp_avg"] += delta_temp
-    input_sim["temp_max"] += delta_temp
     input_sim["temp_min"] += delta_temp
+    input_sim["temp_max"] += delta_temp
 
     input_sim["precip_total"] *= (1 + delta_precip / 100)
-    input_sim["precip_avg"] *= (1 + delta_precip / 100)
 
     df_sim, _ = recomendar_cultivos(input_sim)
 
@@ -289,26 +291,56 @@ if st.session_state.df_res is not None:
     else:
         df_sim = df_sim.sort_values(by="score", ascending=False)
 
-    top_sim = df_sim.head(5)
+    st.subheader("📊 Impacto")
 
-    st.subheader("📊 Impacto en cultivos")
+    df_compare = df_res[["cultivo", "rendimiento"]].merge(
+        df_sim[["cultivo", "rendimiento"]],
+        on="cultivo",
+        suffixes=("_base", "_sim")
+    )
 
-    for _, row in top_sim.iterrows():
+    df_compare["delta"] = df_compare["rendimiento_sim"] - df_compare["rendimiento_base"]
 
-        cultivo = row["cultivo"]
+    st.bar_chart(df_compare.set_index("cultivo")[["rendimiento_base", "rendimiento_sim"]])
 
-        base_row = df_res[df_res["cultivo"] == cultivo]
+    # =========================
+    # ANÁLISIS POR CULTIVO
+    # =========================
 
-        if not base_row.empty:
+    cultivo_sel = st.selectbox("Analizar cultivo", df_res["cultivo"].unique())
 
-            base_val = base_row["rendimiento"].values[0]
-            sim_val = row["rendimiento"]
-            delta = sim_val - base_val
+    base_row = df_res[df_res["cultivo"] == cultivo_sel].iloc[0]
+    sim_row = df_sim[df_sim["cultivo"] == cultivo_sel].iloc[0]
 
-            col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
-            col1.metric("Actual", f"{base_val:.1f}")
-            col2.metric("Simulado", f"{sim_val:.1f}", delta=f"{delta:+.1f}")
+    col1.metric("Base", f"{base_row['rendimiento']:.1f}")
+    col2.metric("Simulado", f"{sim_row['rendimiento']:.1f}")
+    col3.metric("Cambio", f"{sim_row['rendimiento'] - base_row['rendimiento']:.1f}")
 
-            st.write(f"🌱 {cultivo}")
-            st.divider()
+    # =========================
+    # SENSIBILIDAD
+    # =========================
+
+    st.subheader("📈 Sensibilidad a temperatura")
+
+    temps = list(range(-5, 6))
+    results = []
+
+    for t in temps:
+        temp_input = input_dict.copy()
+        temp_input["temp_avg"] += t
+        temp_input["temp_min"] += t
+        temp_input["temp_max"] += t
+
+        df_temp, _ = recomendar_cultivos(temp_input)
+
+        val = df_temp[df_temp["cultivo"] == cultivo_sel]["rendimiento"].values[0]
+        results.append(val)
+
+    df_temp_curve = pd.DataFrame({
+        "delta_temp": temps,
+        "rendimiento": results
+    })
+
+    st.line_chart(df_temp_curve.set_index("delta_temp"))
