@@ -14,6 +14,14 @@ st.set_page_config(page_title="Cultiv-IA", layout="wide")
 api_key = st.secrets["OPENWEATHER_API_KEY"]
 
 # =========================
+# RESET SEGURO (evita bugs viejos)
+# =========================
+
+if "ubicacion_data" in st.session_state:
+    if isinstance(st.session_state.ubicacion_data, tuple):
+        st.session_state.ubicacion_data = None
+
+# =========================
 # SESSION STATE
 # =========================
 
@@ -171,8 +179,7 @@ ubicacion = st.text_input("📍 Ubicación", "Texcoco, México")
 
 if st.button("Analizar"):
 
-    # 🔥 fuerza recalculo solo al hacer click
-    st.session_state.df_res = None
+    st.session_state.df_res = None  # 🔥 recalcular
 
     with st.spinner("🌱 Analizando condiciones..."):
 
@@ -208,10 +215,13 @@ if st.button("Analizar"):
 
         df_res, cluster = recomendar_cultivos(input_dict)
 
-        # guardar estado
+        # ✅ guardar como dict (pro)
         st.session_state.df_res = df_res
         st.session_state.cluster = cluster
-        st.session_state.ubicacion_data = (municipio, estado)
+        st.session_state.ubicacion_data = {
+            "municipio": municipio,
+            "estado": estado
+        }
 
 # =========================
 # RESULTADOS
@@ -221,7 +231,10 @@ if st.session_state.df_res is not None:
 
     df_res = st.session_state.df_res
     cluster = st.session_state.cluster
-    municipio, estado = st.session_state.ubicacion_data
+
+    ubicacion_data = st.session_state.ubicacion_data
+    municipio = ubicacion_data["municipio"]
+    estado = ubicacion_data["estado"]
 
     st.success(f"{municipio}, {estado}")
 
@@ -254,8 +267,6 @@ if st.session_state.df_res is not None:
     # 🧱 CARDS
     for i, (_, row) in enumerate(top5.iterrows(), 1):
 
-        riesgo = row["riesgo"]
-
         st.markdown(f"""
         <div class="card">
             <h3>#{i} 🌱 {row['cultivo']}</h3>
@@ -266,7 +277,7 @@ if st.session_state.df_res is not None:
         col1, col2, col3 = st.columns(3)
 
         col1.metric("📈 Rendimiento", f"{row['rendimiento']:.1f}")
-        col2.metric("⚠️ Riesgo", f"{riesgo:.1f}")
+        col2.metric("⚠️ Riesgo", f"{row['riesgo']:.1f}")
         col3.metric("🧠 Score", f"{row['score']:.1f}")
 
         st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
