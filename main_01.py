@@ -21,27 +21,19 @@ def preguntar_llm(prompt):
             {
                 "role": "system",
                 "content": """
-Eres un ingeniero agrónomo experto en México con experiencia en toma de decisiones agrícolas.
+Eres un ingeniero agrónomo experto en México.
 
-Tu objetivo es ayudar a productores a decidir qué cultivar basándote en:
-- condiciones climáticas
-- características del suelo
+Ayudas a productores a decidir qué cultivar usando:
+- clima
+- suelo
 - rendimiento estimado
-- riesgo e incertidumbre
+- riesgo
 
-Reglas:
-- Explica de forma clara y práctica (no académica)
-- Prioriza recomendaciones accionables
-- Usa el contexto proporcionado (no inventes datos)
-- Si hay varias opciones, compara y justifica
-- Señala riesgos importantes (clima, plagas, variabilidad)
-- Evita respuestas genéricas
-- Habla como asesor técnico profesional
-
-Siempre que puedas:
-- recomienda el mejor cultivo claramente
-- menciona alternativas
-- da consejos prácticos para mejorar rendimiento
+Responde:
+- claro
+- práctico
+- sin tecnicismos innecesarios
+- con recomendaciones accionables
 """
             },
             {"role": "user", "content": prompt}
@@ -74,8 +66,6 @@ if "cluster" not in st.session_state:
 if "ubicacion_data" not in st.session_state:
     st.session_state.ubicacion_data = None
 
-if "input_dict" not in st.session_state:
-    st.session_state.input_dict = None
 
 # =========================
 # FUNCIONES
@@ -97,19 +87,13 @@ def cargar_suelos():
 
 df_suelos = cargar_suelos()
 
-@st.cache_data
 def obtener_suelo(municipio):
     m = limpiar_texto(municipio)
     row = df_suelos[df_suelos["municipio_clean"].str.contains(m, na=False)]
 
     if len(row) > 0:
         row = row.iloc[0]
-        return {
-            "suelo_arcilloso": row["suelo_arcilloso"],
-            "suelo_arenoso": row["suelo_arenoso"],
-            "suelo_fertil": row["suelo_fertil"],
-            "suelo_limitado": row["suelo_limitado"],
-        }
+        return row.to_dict()
 
     return {
         "suelo_arcilloso": 30,
@@ -118,81 +102,22 @@ def obtener_suelo(municipio):
         "suelo_limitado": 10,
     }
 
-@st.cache_data(ttl=1800)
 def obtener_clima_actual(lat, lon):
     url = "https://api.openweathermap.org/data/2.5/weather"
-
-    params = {
-        "lat": lat,
-        "lon": lon,
-        "appid": api_key,
-        "units": "metric"
-    }
-
-    data = requests.get(url, params=params, timeout=5).json()
+    params = {"lat": lat, "lon": lon, "appid": api_key, "units": "metric"}
+    data = requests.get(url, params=params).json()
 
     return {
         "temp": data["main"]["temp"],
         "precip": data.get("rain", {}).get("1h", 0)
     }
 
-@st.cache_data(ttl=86400)
-def obtener_climatologia(lat, lon):
-
-    url = "https://power.larc.nasa.gov/api/temporal/daily/point"
-
-    params = {
-        "parameters": "T2M,PRECTOTCORR",
-        "community": "AG",
-        "longitude": lon,
-        "latitude": lat,
-        "start": "20180101",
-        "end": "20231231",
-        "format": "JSON"
-    }
-
-    try:
-        r = requests.get(url, params=params, timeout=15)
-
-        if r.status_code != 200:
-            return None
-
-        data = r.json()
-        p = data["properties"]["parameter"]
-
-        temps = [v for v in p["T2M"].values() if v != -999]
-
-        precip = None
-        for key in ["PRECTOTCORR", "PRECTOT", "PRECTOT_LAND"]:
-            if key in p:
-                precip = [v for v in p[key].values() if v != -999]
-                break
-
-        if precip is None:
-            return None
-
-        return {
-            "temp_avg": sum(temps) / len(temps),
-            "precip_total": sum(precip) / (len(precip) / 365)
-        }
-
-    except:
-        return None
-
-@st.cache_data(ttl=3600)
 def obtener_datos_ubicacion(ubicacion):
     url = "https://nominatim.openstreetmap.org/search"
-
-    params = {
-        "q": ubicacion,
-        "format": "json",
-        "addressdetails": 1
-    }
-
+    params = {"q": ubicacion, "format": "json", "addressdetails": 1}
     headers = {"User-Agent": "cultiv-ia"}
 
-    data = requests.get(url, params=params, headers=headers, timeout=5).json()
-
+    data = requests.get(url, params=params, headers=headers).json()
     return data[0] if data else None
 
 def extraer_municipio(data):
@@ -210,9 +135,17 @@ st.title("🌱 Cultiv-IA")
 
 ubicacion = st.text_input("📍 Ubicación", "Texcoco, México")
 
+# =========================
+# ANALIZAR
+# =========================
+
 if st.button("Analizar"):
 
     data = obtener_datos_ubicacion(ubicacion)
+
+    if data is None:
+        st.error("No se encontró la ubicación")
+        st.stop()
 
     municipio, estado = extraer_municipio(data)
 
@@ -220,16 +153,14 @@ if st.button("Analizar"):
     lon = float(data["lon"])
 
     actual = obtener_clima_actual(lat, lon)
-    clima = obtener_climatologia(lat, lon)
-
     suelo = obtener_suelo(municipio)
 
     input_dict = {
-        "temp_avg": clima["temp_avg"],
-        "temp_max": clima["temp_avg"],
-        "temp_min": clima["temp_avg"],
-        "precip_total": clima["precip_total"],
-        "precip_avg": clima["precip_total"] / 365,
+        "temp_avg": actual["temp"],
+        "temp_max": actual["temp"],
+        "temp_min": actual["temp"],
+        "precip_total": actual["precip"] * 365,
+        "precip_avg": actual["precip"],
         "nomestado": "MEXICO",
         "nomcicloproductivo": "PV",
         "nommodalidad": "RIEGO"
@@ -241,17 +172,17 @@ if st.button("Analizar"):
 
     st.session_state.df_res = df_res
     st.session_state.cluster = cluster
-    st.session_state.ubicacion_data = (municipio, estado, actual, clima)
+    st.session_state.ubicacion_data = (municipio, estado, actual)
 
 
 # =========================
-# RESULTADOS + ASESOR
+# RESULTADOS
 # =========================
 
 if st.session_state.df_res is not None:
 
     df_res = st.session_state.df_res
-    municipio, estado, actual, clima = st.session_state.ubicacion_data
+    municipio, estado, actual = st.session_state.ubicacion_data
 
     st.success(f"{municipio}, {estado}")
 
@@ -260,43 +191,64 @@ if st.session_state.df_res is not None:
     for _, row in df_res.head(5).iterrows():
         st.write(f"{row['cultivo']} → {row['rendimiento']:.1f} ton/ha")
 
+    # =========================
+    # 🧠 ASESOR (AHORA SÍ FUNCIONA)
+    # =========================
+
     st.markdown("---")
     st.subheader("🧠 Asesor agrícola")
 
     decision = st.radio(
         "¿Ya seleccionaste un cultivo?",
-        ["❓ Necesito ayuda", "✅ Ya elegí"],
+        ["❓ Necesito ayuda para decidir", "✅ Ya elegí un cultivo"],
         horizontal=True
     )
 
-    if decision == "❓ Necesito ayuda":
+    # 👉 AYUDA
+    if decision == "❓ Necesito ayuda para decidir":
 
-        if st.button("Ayúdame a decidir"):
+        if st.button("🧠 Ayúdame a decidir"):
+
+            top = df_res.head(3)
 
             prompt = f"""
-Municipio: {municipio}
-Clima: {clima}
+Municipio: {municipio}, {estado}
 
 Opciones:
-{df_res.head(3)[['cultivo','rendimiento','riesgo','score']].to_string()}
+{top[['cultivo','rendimiento','riesgo','score']].to_string()}
 
 Recomienda el mejor cultivo y explica por qué.
+Incluye riesgos y consejos prácticos.
 """
 
             st.write(preguntar_llm(prompt))
 
+    # 👉 YA ELIGIÓ
     else:
 
-        cultivo = st.selectbox("Selecciona cultivo", df_res["cultivo"])
+        cultivo_sel = st.selectbox("🌱 ¿Qué cultivo elegiste?", df_res["cultivo"])
 
-        if st.button("Analizar cultivo"):
+        if st.button("📘 Analizar cultivo"):
+
+            row = df_res[df_res["cultivo"] == cultivo_sel].iloc[0]
 
             prompt = f"""
-Cultivo: {cultivo}
-Temperatura: {actual['temp']}
-Precipitación: {clima['precip_total']}
+Cultivo: {cultivo_sel}
+Municipio: {municipio}
 
-Explica condiciones óptimas, plagas y recomendaciones.
+Temperatura: {actual['temp']}
+Precipitación: {actual['precip']}
+
+Rendimiento estimado: {row['rendimiento']}
+Riesgo: {row['riesgo']}
+
+Explica:
+- condiciones óptimas
+- comparación con condiciones actuales
+- plagas comunes
+- recomendaciones
+
+Termina preguntando si necesita más ayuda.
 """
 
             st.write(preguntar_llm(prompt))
