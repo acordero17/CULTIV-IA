@@ -18,44 +18,17 @@ df_suelos = pd.read_csv("modelos/suelos.csv")
 # SESSION STATE
 # =========================
 
+if "analizado" not in st.session_state:
+    st.session_state.analizado = False
+
 if "df_res" not in st.session_state:
     st.session_state.df_res = None
-
-if "cluster" not in st.session_state:
-    st.session_state.cluster = None
-
-if "ubicacion_data" not in st.session_state:
-    st.session_state.ubicacion_data = None
 
 if "input_base" not in st.session_state:
     st.session_state.input_base = None
 
-# =========================
-# ESTILOS
-# =========================
-
-st.markdown("""
-<style>
-.stApp {
-    background: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)),
-    url("https://images.unsplash.com/photo-1500382017468-9049fed747ef");
-    background-size: cover;
-}
-
-.block-container {
-    background: rgba(0,0,0,0.5);
-    padding: 2rem;
-    border-radius: 16px;
-}
-
-.card {
-    background: rgba(255,255,255,0.08);
-    padding: 15px;
-    border-radius: 12px;
-    margin-bottom: 15px;
-}
-</style>
-""", unsafe_allow_html=True)
+if "ubicacion_data" not in st.session_state:
+    st.session_state.ubicacion_data = None
 
 # =========================
 # FUNCIONES
@@ -132,36 +105,30 @@ def obtener_datos_ubicacion(ubicacion):
 
 def extraer_municipio(data):
     addr = data["address"]
-    municipio = addr.get("city") or addr.get("town") or addr.get("county")
-    estado = addr.get("state")
-    return municipio, estado
+    return (
+        addr.get("city") or addr.get("town") or addr.get("county"),
+        addr.get("state")
+    )
 
 # =========================
-# HEADER
+# UI
 # =========================
 
-col1, col2 = st.columns([1, 5])
-
-with col1:
-    st.image("https://cdn-icons-png.flaticon.com/512/2909/2909762.png", width=80)
-
-with col2:
-    st.title("🌱 Cultiv-IA")
-    st.caption("Recomendaciones inteligentes para el campo")
-
-# =========================
-# INPUT
-# =========================
+st.title("🌱 Cultiv-IA")
 
 ubicacion = st.text_input("📍 Ubicación", "Texcoco, México")
 
-# =========================
-# BOTÓN
-# =========================
-
 if st.button("Analizar"):
+    st.session_state.analizado = True
+    st.session_state.df_res = None  # 🔥 fuerza recalculo
 
-    with st.spinner("🌱 Analizando condiciones..."):
+# =========================
+# PROCESO PRINCIPAL
+# =========================
+
+if st.session_state.analizado and st.session_state.df_res is None:
+
+    with st.spinner("Analizando..."):
 
         data = obtener_datos_ubicacion(ubicacion)
 
@@ -189,13 +156,11 @@ if st.button("Analizar"):
 
         input_dict.update(suelo)
 
-        # 🔥 rápido
         df_res, cluster = recomendar_cultivos_fast(input_dict)
 
         st.session_state.df_res = df_res
-        st.session_state.cluster = cluster
-        st.session_state.ubicacion_data = (municipio, estado, lat, lon)
         st.session_state.input_base = input_dict
+        st.session_state.ubicacion_data = (municipio, estado, lat, lon)
 
 # =========================
 # RESULTADOS
@@ -210,56 +175,27 @@ if st.session_state.df_res is not None:
     st.success(f"{municipio}, {estado}")
     st.map(pd.DataFrame({"lat": [lat], "lon": [lon]}))
 
-    modo = st.radio(
-        "¿Qué prefieres?",
-        ["🌾 Mayor rendimiento", "🧠 Mayor estabilidad"],
-        horizontal=True
-    )
-
-    if modo == "🌾 Mayor rendimiento":
-        df_res = df_res.sort_values(by="rendimiento", ascending=False)
-    else:
-        df_res = df_res.sort_values(by="score", ascending=False)
-
+    df_res = df_res.sort_values(by="rendimiento", ascending=False)
     top5 = df_res.head(5)
 
-    # =========================
-    # CARDS
-    # =========================
+    st.subheader("🌾 Top cultivos")
 
-    for i, (_, row) in enumerate(top5.iterrows(), 1):
-
-        st.markdown(f"""
-        <div class="card">
-            <h3>#{i} 🌱 {row['cultivo']}</h3>
-            <p><b>Tipo:</b> {row['tipo_cultivo']} | <b>Clasificación:</b> {row['clasificacion']}</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        col1, col2, col3 = st.columns(3)
-
-        col1.metric("📈 Rendimiento", f"{row['rendimiento']:.1f}")
-        col2.metric("⚠️ Riesgo", f"{row['riesgo']:.1f}")
-        col3.metric("🧠 Score", f"{row['score']:.1f}")
+    for _, row in top5.iterrows():
+        st.write(f"🌱 {row['cultivo']} — {row['rendimiento']:.1f}")
 
     # =========================
-    # WHAT IF (RÁPIDO)
+    # WHAT IF
     # =========================
 
     st.markdown("---")
     st.subheader("🧪 Simulación por cultivo")
 
-    cultivo_sel = st.selectbox("Selecciona cultivo", df_res["cultivo"].unique())
+    cultivo_sel = st.selectbox("Cultivo", df_res["cultivo"].unique())
 
-    col1, col2 = st.columns(2)
+    delta_temp = st.slider("Temperatura", -10, 10, 0)
+    delta_precip = st.slider("Precipitación (%)", -50, 50, 0)
 
-    with col1:
-        delta_temp = st.slider("Temperatura (°C)", -10, 10, 0)
-
-    with col2:
-        delta_precip = st.slider("Precipitación (%)", -50, 50, 0)
-
-    if st.button("Simular escenario"):
+    if st.button("Simular"):
 
         input_sim = input_dict.copy()
 
@@ -268,19 +204,7 @@ if st.session_state.df_res is not None:
         input_sim["temp_max"] += delta_temp
         input_sim["precip_total"] *= (1 + delta_precip / 100)
 
-        with st.spinner("Calculando..."):
-            resultado = predecir_con_incertidumbre(input_sim, cultivo_sel)
+        resultado = predecir_con_incertidumbre(input_sim, cultivo_sel)
 
-        base_row = df_res[df_res["cultivo"] == cultivo_sel].iloc[0]
-        base_val = base_row["rendimiento"]
-
-        sim_val = resultado["mean"]
-        delta = sim_val - base_val
-
-        col1, col2, col3 = st.columns(3)
-
-        col1.metric("Base", f"{base_val:.1f}")
-        col2.metric("Simulado", f"{sim_val:.1f}", delta=f"{delta:+.1f}")
-        col3.metric("Riesgo", f"{resultado['riesgo']:.1f}")
-
-        st.caption(f"Rango esperado: {resultado['low']:.1f} – {resultado['high']:.1f}")
+        st.write("Resultado:")
+        st.write(resultado)
