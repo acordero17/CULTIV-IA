@@ -216,8 +216,16 @@ def obtener_datos_ubicacion(ubicacion):
 
 def extraer_municipio(data):
     addr = data["address"]
-    municipio = addr.get("city") or addr.get("town") or addr.get("county")
+
+    municipio = (
+        addr.get("city")
+        or addr.get("town")
+        or addr.get("village")
+        or addr.get("county")
+    )
+
     estado = addr.get("state")
+
     return municipio, estado
 
 # =========================
