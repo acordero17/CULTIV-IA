@@ -691,8 +691,8 @@ NO agregues nada después de esa pregunta.
     st.markdown("---")
     if st.button("🔄 ¿Quieres analizar otro municipio?"):
 
-    for key in ["df_res", "cluster", "ubicacion_data", "input_dict", "chat_history"]:
-        if key in st.session_state:
-            del st.session_state[key]
+        for key in ["df_res", "cluster", "ubicacion_data", "input_dict", "chat_history"]:
+            if key in st.session_state:
+                del st.session_state[key]
 
-    st.rerun()
+        st.rerun()
