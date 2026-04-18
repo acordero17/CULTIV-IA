@@ -183,19 +183,36 @@ def obtener_climatologia(lat, lon):
 
 @st.cache_data(ttl=3600)
 def obtener_datos_ubicacion(ubicacion):
-    url = "https://nominatim.openstreetmap.org/search"
+    url = "https://api.opencagedata.com/geocode/v1/json"
 
     params = {
         "q": ubicacion,
-        "format": "json",
-        "addressdetails": 1
+        "key": st.secrets["OPENCAGE_API_KEY"],
+        "limit": 1,
+        "language": "es"
     }
 
-    headers = {"User-Agent": "cultiv-ia"}
+    try:
+        r = requests.get(url, params=params, timeout=5)
 
-    data = requests.get(url, params=params, headers=headers, timeout=5).json()
+        if r.status_code != 200:
+            return None
 
-    return data[0] if data else None
+        data = r.json()
+
+        if not data["results"]:
+            return None
+
+        result = data["results"][0]
+
+        return {
+            "lat": result["geometry"]["lat"],
+            "lon": result["geometry"]["lng"],
+            "address": result["components"]
+        }
+
+    except Exception:
+        return None
 
 def extraer_municipio(data):
     addr = data["address"]
