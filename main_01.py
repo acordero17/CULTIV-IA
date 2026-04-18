@@ -12,7 +12,6 @@ from utils import recomendar_cultivos
 st.set_page_config(page_title="Cultiv-IA", layout="wide")
 
 api_key = st.secrets["OPENWEATHER_API_KEY"]
-df_suelos = pd.read_csv("modelos/suelos.csv")
 
 # =========================
 # SESSION STATE
@@ -64,8 +63,18 @@ def limpiar_texto(texto):
     )
     return texto.strip()
 
-df_suelos["municipio_clean"] = df_suelos["municipio"].apply(limpiar_texto)
 
+@st.cache_data
+def cargar_suelos():
+    df = pd.read_csv("modelos/suelos.csv")
+    df["municipio_clean"] = df["municipio"].apply(limpiar_texto)
+    return df
+
+
+df_suelos = cargar_suelos()
+
+
+@st.cache_data
 def obtener_suelo(municipio):
     m = limpiar_texto(municipio)
     row = df_suelos[df_suelos["municipio_clean"].str.contains(m, na=False)]
@@ -86,6 +95,8 @@ def obtener_suelo(municipio):
         "suelo_limitado": 10,
     }
 
+
+@st.cache_data(ttl=1800)
 def obtener_forecast(lat, lon):
     url = "https://api.openweathermap.org/data/2.5/forecast"
 
@@ -96,7 +107,7 @@ def obtener_forecast(lat, lon):
         "units": "metric"
     }
 
-    data = requests.get(url, params=params).json()
+    data = requests.get(url, params=params, timeout=5).json()
 
     temps = []
     lluvia_total = 0
@@ -110,6 +121,8 @@ def obtener_forecast(lat, lon):
         "precip_total": lluvia_total,
     }
 
+
+@st.cache_data(ttl=3600)
 def obtener_datos_ubicacion(ubicacion):
     url = "https://nominatim.openstreetmap.org/search"
 
@@ -121,15 +134,17 @@ def obtener_datos_ubicacion(ubicacion):
 
     headers = {"User-Agent": "cultiv-ia"}
 
-    data = requests.get(url, params=params, headers=headers).json()
+    data = requests.get(url, params=params, headers=headers, timeout=5).json()
 
     return data[0] if data else None
+
 
 def extraer_municipio(data):
     addr = data["address"]
     municipio = addr.get("city") or addr.get("town") or addr.get("county")
     estado = addr.get("state")
     return municipio, estado
+
 
 # =========================
 # HEADER
@@ -156,9 +171,16 @@ ubicacion = st.text_input("📍 Ubicación", "Texcoco, México")
 
 if st.button("Analizar"):
 
+    # 🔥 fuerza recalculo solo al hacer click
+    st.session_state.df_res = None
+
     with st.spinner("🌱 Analizando condiciones..."):
 
         data = obtener_datos_ubicacion(ubicacion)
+
+        if data is None:
+            st.error("No se pudo encontrar la ubicación")
+            st.stop()
 
         municipio, estado = extraer_municipio(data)
 
@@ -186,25 +208,22 @@ if st.button("Analizar"):
 
         df_res, cluster = recomendar_cultivos(input_dict)
 
-        # 🔥 guardar estado
+        # guardar estado
         st.session_state.df_res = df_res
         st.session_state.cluster = cluster
-        st.session_state.ubicacion_data = (municipio, estado, lat, lon)
+        st.session_state.ubicacion_data = (municipio, estado)
 
 # =========================
-# RESULTADOS PERSISTENTES
+# RESULTADOS
 # =========================
 
 if st.session_state.df_res is not None:
 
     df_res = st.session_state.df_res
     cluster = st.session_state.cluster
-    municipio, estado, lat, lon = st.session_state.ubicacion_data
+    municipio, estado = st.session_state.ubicacion_data
 
     st.success(f"{municipio}, {estado}")
-
-    # 🗺️ mapa
-    st.map(pd.DataFrame({"lat": [lat], "lon": [lon]}))
 
     # 🌍 cluster
     cluster_map = {
@@ -235,7 +254,7 @@ if st.session_state.df_res is not None:
     # 🧱 CARDS
     for i, (_, row) in enumerate(top5.iterrows(), 1):
 
-        riesgo = row["high"] - row["low"]
+        riesgo = row["riesgo"]
 
         st.markdown(f"""
         <div class="card">
