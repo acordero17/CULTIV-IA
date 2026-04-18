@@ -27,8 +27,11 @@ if "cluster" not in st.session_state:
 if "ubicacion_data" not in st.session_state:
     st.session_state.ubicacion_data = None
 
+if "input_base" not in st.session_state:
+    st.session_state.input_base = None
+
 # =========================
-# 🎨 ESTILOS
+# ESTILOS
 # =========================
 
 st.markdown("""
@@ -38,11 +41,13 @@ st.markdown("""
     url("https://images.unsplash.com/photo-1500382017468-9049fed747ef");
     background-size: cover;
 }
+
 .block-container {
     background: rgba(0,0,0,0.5);
     padding: 2rem;
     border-radius: 16px;
 }
+
 .card {
     background: rgba(255,255,255,0.08);
     padding: 15px;
@@ -186,13 +191,13 @@ if st.button("Analizar"):
 
         df_res, cluster = recomendar_cultivos(input_dict)
 
-        # 🔥 guardar estado
         st.session_state.df_res = df_res
         st.session_state.cluster = cluster
         st.session_state.ubicacion_data = (municipio, estado, lat, lon)
+        st.session_state.input_base = input_dict  # 🔥 importante para simulación
 
 # =========================
-# RESULTADOS PERSISTENTES
+# RESULTADOS
 # =========================
 
 if st.session_state.df_res is not None:
@@ -200,13 +205,12 @@ if st.session_state.df_res is not None:
     df_res = st.session_state.df_res
     cluster = st.session_state.cluster
     municipio, estado, lat, lon = st.session_state.ubicacion_data
+    input_dict = st.session_state.input_base
 
     st.success(f"{municipio}, {estado}")
 
-    # 🗺️ mapa
     st.map(pd.DataFrame({"lat": [lat], "lon": [lon]}))
 
-    # 🌍 cluster
     cluster_map = {
         0: "Zona agrícola de alto potencial",
         1: "Zona productiva tecnificada",
@@ -218,7 +222,6 @@ if st.session_state.df_res is not None:
     st.subheader("🌍 Tipo de municipio")
     st.success(cluster_map.get(cluster, cluster))
 
-    # 🎛️ selector
     modo = st.radio(
         "¿Qué prefieres?",
         ["🌾 Mayor rendimiento", "🧠 Mayor estabilidad"],
@@ -232,10 +235,13 @@ if st.session_state.df_res is not None:
 
     top5 = df_res.head(5)
 
-    # 🧱 CARDS
+    # =========================
+    # CARDS
+    # =========================
+
     for i, (_, row) in enumerate(top5.iterrows(), 1):
 
-        riesgo = row["high"] - row["low"]
+        riesgo = row["riesgo"]
 
         st.markdown(f"""
         <div class="card">
@@ -251,3 +257,58 @@ if st.session_state.df_res is not None:
         col3.metric("🧠 Score", f"{row['score']:.1f}")
 
         st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
+
+    # =========================
+    # WHAT IF
+    # =========================
+
+    st.markdown("---")
+    st.subheader("🧪 What-if Agronómico")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        delta_temp = st.slider("🌡️ Temperatura (°C)", -10, 10, 0)
+
+    with col2:
+        delta_precip = st.slider("🌧️ Precipitación (%)", -50, 50, 0)
+
+    input_sim = input_dict.copy()
+
+    input_sim["temp_avg"] += delta_temp
+    input_sim["temp_max"] += delta_temp
+    input_sim["temp_min"] += delta_temp
+
+    input_sim["precip_total"] *= (1 + delta_precip / 100)
+    input_sim["precip_avg"] *= (1 + delta_precip / 100)
+
+    df_sim, _ = recomendar_cultivos(input_sim)
+
+    if modo == "🌾 Mayor rendimiento":
+        df_sim = df_sim.sort_values(by="rendimiento", ascending=False)
+    else:
+        df_sim = df_sim.sort_values(by="score", ascending=False)
+
+    top_sim = df_sim.head(5)
+
+    st.subheader("📊 Impacto en cultivos")
+
+    for _, row in top_sim.iterrows():
+
+        cultivo = row["cultivo"]
+
+        base_row = df_res[df_res["cultivo"] == cultivo]
+
+        if not base_row.empty:
+
+            base_val = base_row["rendimiento"].values[0]
+            sim_val = row["rendimiento"]
+            delta = sim_val - base_val
+
+            col1, col2 = st.columns(2)
+
+            col1.metric("Actual", f"{base_val:.1f}")
+            col2.metric("Simulado", f"{sim_val:.1f}", delta=f"{delta:+.1f}")
+
+            st.write(f"🌱 {cultivo}")
+            st.divider()
