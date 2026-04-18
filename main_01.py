@@ -403,7 +403,7 @@ if st.session_state.df_res is not None:
 
             if not row_econ.empty:
 
-                costo = row_econ["costo_promedio"].values[0]
+                costo = row_econ["costo"].values[0]
                 precio = row_econ["precio"].values[0]
 
                 if pd.notna(costo) and pd.notna(precio):
