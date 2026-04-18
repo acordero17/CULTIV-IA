@@ -22,7 +22,7 @@ No inventas datos.
             {"role": "user", "content": prompt}
         ],
         temperature=0.4,
-        max_tokens=300
+        max_tokens=400
     )
 
     return response.choices[0].message.content
@@ -381,101 +381,171 @@ if st.session_state.df_res is not None:
         c2.metric("⚠️ Riesgo", f"{row_new['riesgo']:.1f}")
         c3.metric("🧠 Score", f"{row_new['score']:.1f}")
 
-    # =========================
-    # 🧠 ASESOR AGRÍCOLA
-    # =========================
+# =========================
+# 🧠 ASESOR AGRÍCOLA (INTERACTIVO)
+# =========================
 
-    st.markdown("---")
-    st.subheader("🧠 Asesor agrícola")
+st.markdown("---")
+st.subheader("🧠 Asesor agrícola")
 
-    decision = st.radio(
-        "¿Ya seleccionaste un cultivo o necesitas ayuda para decidir?",
-        ["❓ Necesito ayuda para decidir", "✅ Ya elegí un cultivo"],
-        horizontal=True
-    )
+decision = st.radio(
+    "¿Ya seleccionaste un cultivo o necesitas ayuda para decidir?",
+    ["❓ Necesito ayuda para decidir", "✅ Ya elegí un cultivo"],
+    horizontal=True
+)
 
-    # 🔍 AYUDA PARA DECIDIR
-    if decision == "❓ Necesito ayuda para decidir":
+# =========================
+# 🔍 AYUDA PARA DECIDIR
+# =========================
 
-        if st.button("🧠 Ayúdame a decidir"):
+if decision == "❓ Necesito ayuda para decidir":
 
-            top = df_res.head(3)
+    # 👉 BOTÓN PRINCIPAL
+    if st.button("🧠 Ayúdame a decidir"):
 
-            prompt = f"""
-    Ubicación: {municipio}, {estado}
+        top = df_res.head(3)
 
-    Clima actual:
-    Temperatura: {actual['temp']} °C
-    Lluvia: {actual['precip']} mm
-
-    Clima histórico:
-    Temperatura promedio: {clima['temp_avg']} °C
-    Precipitación anual: {clima['precip_total']} mm
-
-    Opciones:
-    {top[['cultivo','rendimiento','riesgo','score']].to_string()}
-
-    Recomienda el mejor cultivo, explica por qué,
-    cuál es más rentable, cuál más seguro y riesgos clave.
-    """
-
-            with st.spinner("🧠 Analizando decisión..."):
-                respuesta = preguntar_llm(prompt)
-
-            st.markdown("### 🧠 Recomendación del experto")
-            st.write(respuesta)
-
-    # 🌱 YA ELIGIÓ
-    else:
-
-        cultivo_final = st.selectbox("🌱 ¿Qué cultivo elegiste?", df_res["cultivo"])
-
-        if st.button("📘 Analizar cultivo"):
-
-            row = df_res[df_res["cultivo"] == cultivo_final].iloc[0]
-
-            prompt = f"""
+        prompt = f"""
 Eres un ingeniero agrónomo experto en México.
 
-Tu tarea es tomar una decisión clara basada en:
-- resultados del modelo (rendimiento y riesgo)
-- conocimiento agrícola general de México
+REGLAS:
+- Máximo 6 líneas
+- NO listar todos los cultivos
+- NO repetir tablas
+- Sé directo
 
-Reglas IMPORTANTES:
-- NO repitas tablas ni datos completos
-- Sé breve (máximo 5-6 líneas)
-- NO inventes datos específicos (precios, rankings exactos, etc.)
-- Puedes usar conocimiento general (ej: cultivos comunes en la región, facilidad de comercialización, demanda típica)
-- Si no estás seguro de un dato, no lo afirmes
-
-Contexto:
 Ubicación: {municipio}, {estado}
 
-Resultados del modelo:
+Resultados:
 {top[['cultivo','rendimiento','riesgo','score']].to_string()}
 
-Instrucciones:
-
+INSTRUCCIONES:
 1. Elige el mejor cultivo
-2. Explica brevemente por qué (modelo + contexto agrícola)
-3. Si aplica, menciona algo relevante como:
-   - facilidad de venta
-   - uso común en la región
-   - nivel de manejo requerido
-4. Da una segunda opción
-5. Termina preguntando:
+2. Explica brevemente por qué
+3. Da una segunda opción
+4. Termina EXACTAMENTE con:
 
-"¿Te gustaría irte por esta opción o prefieres analizar otra?"
-
-NO agregues texto extra.
+"¿Te convence esta opción o prefieres la alternativa?"
 """
 
-            with st.spinner("🌱 Analizando cultivo..."):
-                respuesta = preguntar_llm(prompt)
+        with st.spinner("🧠 Analizando..."):
+            respuesta = preguntar_llm(prompt)
 
-            st.markdown("### 🌱 Análisis del cultivo")
-            st.write(respuesta)
+        # 👉 GUARDAMOS RESPUESTA
+        st.session_state.recomendacion = respuesta
 
+    # 👉 MOSTRAR RESPUESTA SI YA EXISTE
+    if "recomendacion" in st.session_state:
+
+        st.markdown("### 🧠 Recomendación")
+        st.write(st.session_state.recomendacion)
+
+        # 👉 INTERACCIÓN DEL USUARIO
+        decision_usuario = st.radio(
+            "¿Qué quieres hacer?",
+            ["✅ Sí, analizar esta opción", "🔄 Ver alternativa"]
+        )
+
+        # =========================
+        # ✔️ USUARIO ACEPTA
+        # =========================
+
+        if decision_usuario == "✅ Sí, analizar esta opción":
+
+            cultivo_top = df_res.iloc[0]
+
+            if st.button("📘 Ver análisis completo"):
+
+                prompt_cultivo = f"""
+Cultivo: {cultivo_top['cultivo']}
+Ubicación: {municipio}, {estado}
+
+Condiciones actuales:
+Temp: {actual['temp']} °C
+Precipitación: {clima['precip_total']} mm
+
+Rendimiento: {cultivo_top['rendimiento']}
+Riesgo: {cultivo_top['riesgo']}
+
+Explica:
+- condiciones óptimas
+- comparación con actuales
+- plagas comunes
+- recomendaciones prácticas
+
+Termina preguntando si necesita más ayuda.
+"""
+
+                with st.spinner("🌱 Analizando cultivo..."):
+                    st.write(preguntar_llm(prompt_cultivo))
+
+        # =========================
+        # ❌ USUARIO QUIERE ALTERNATIVA
+        # =========================
+
+        elif decision_usuario == "🔄 Ver alternativa":
+
+            cultivo_alt = df_res.iloc[1]
+
+            if st.button("🌱 Analizar alternativa"):
+
+                prompt_alt = f"""
+El usuario NO eligió la primera opción.
+
+Recomienda este cultivo como alternativa:
+{cultivo_alt['cultivo']}
+
+Ubicación: {municipio}, {estado}
+
+Explica brevemente:
+- por qué es buena opción
+- en qué casos es mejor que la primera
+
+Termina con:
+"¿Te gustaría analizar este cultivo?"
+"""
+
+                with st.spinner("🌱 Analizando alternativa..."):
+                    st.write(preguntar_llm(prompt_alt))
+
+
+# =========================
+# 🌱 YA ELIGIÓ DIRECTAMENTE
+# =========================
+
+else:
+
+    cultivo_final = st.selectbox(
+        "🌱 ¿Qué cultivo elegiste?",
+        df_res["cultivo"]
+    )
+
+    if st.button("📘 Analizar cultivo"):
+
+        row = df_res[df_res["cultivo"] == cultivo_final].iloc[0]
+
+        prompt = f"""
+Cultivo: {cultivo_final}
+Ubicación: {municipio}, {estado}
+
+Condiciones actuales:
+Temp: {actual['temp']} °C
+Precipitación: {clima['precip_total']} mm
+
+Rendimiento: {row['rendimiento']}
+Riesgo: {row['riesgo']}
+
+Explica:
+- condiciones óptimas
+- comparación con actuales
+- plagas
+- recomendaciones prácticas
+
+Termina preguntando si necesita más ayuda.
+"""
+
+        with st.spinner("🌱 Analizando cultivo..."):
+            st.write(preguntar_llm(prompt))
     # 🔄 RESET
     st.markdown("---")
     if st.button("🔄 ¿Quieres analizar otro municipio?"):
