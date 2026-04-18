@@ -241,7 +241,6 @@ if st.session_state.df_res is not None:
 
     st.success(f"{municipio}, {estado}")
 
-    # 🌍 cluster
     cluster_map = {
         0: "Zona agrícola de alto potencial",
         1: "Zona productiva tecnificada",
@@ -313,7 +312,7 @@ if st.session_state.df_res is not None:
         st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
 
     # =========================
-    # 🔄 RESET UX
+    # 🔄 RESET
     # =========================
 
     st.markdown("---")
@@ -324,6 +323,8 @@ if st.session_state.df_res is not None:
         st.session_state.df_res = None
         st.session_state.cluster = None
         st.session_state.ubicacion_data = None
-        st.session_state["ubicacion_input"] = ""
+
+        if "ubicacion_input" in st.session_state:
+            del st.session_state["ubicacion_input"]
 
         st.rerun()
