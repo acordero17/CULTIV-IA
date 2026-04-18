@@ -277,7 +277,7 @@ def construir_input_usuario(df_base, cultivo, municipio):
     if df_filtrado.empty:
         return None
 
-    # 👉 usar el último año disponible
+    # 🔥 ESTO FALTABA
     row = df_filtrado.sort_values("anio").tail(1)
 
     return row
