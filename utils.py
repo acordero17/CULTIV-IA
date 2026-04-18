@@ -1,330 +1,169 @@
-import streamlit as st
-import requests
 import pandas as pd
-import unicodedata
-
-from utils import recomendar_cultivos
-
-# =========================
-# CONFIG
-# =========================
-
-st.set_page_config(page_title="Cultiv-IA", layout="wide")
-
-api_key = st.secrets["OPENWEATHER_API_KEY"]
+import numpy as np
+import joblib
 
 # =========================
-# SESSION STATE
+# 📦 MODELOS
 # =========================
 
-if "df_res" not in st.session_state:
-    st.session_state.df_res = None
+model_reg = joblib.load("modelos/modelo_regresion.pkl")
+model_cluster = joblib.load("modelos/modelo_cluster.pkl")
 
-if "cluster" not in st.session_state:
-    st.session_state.cluster = None
+scaler_cluster = joblib.load("modelos/scaler_cluster.pkl")
 
-if "ubicacion_data" not in st.session_state:
-    st.session_state.ubicacion_data = None
+features_modelo = joblib.load("modelos/features.pkl")
+features_cluster = joblib.load("modelos/features_cluster.pkl")
 
-# =========================
-# 🎨 ESTILOS
-# =========================
-
-st.markdown("""
-<style>
-.stApp {
-    background: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)),
-    url("https://images.unsplash.com/photo-1500382017468-9049fed747ef");
-    background-size: cover;
-}
-.block-container {
-    background: rgba(0,0,0,0.5);
-    padding: 2rem;
-    border-radius: 16px;
-}
-.card {
-    background: rgba(255,255,255,0.08);
-    padding: 15px;
-    border-radius: 12px;
-    margin-bottom: 15px;
-}
-</style>
-""", unsafe_allow_html=True)
+cultivos = joblib.load("modelos/cultivos.pkl")
+df_tipos = pd.read_csv("modelos/tipos_cultivo.csv")
 
 # =========================
-# FUNCIONES
+# ⚙️ CONFIG TURBO
 # =========================
 
-def limpiar_texto(texto):
-    texto = texto.upper()
-    texto = ''.join(
-        c for c in unicodedata.normalize('NFD', texto)
-        if unicodedata.category(c) != 'Mn'
-    )
-    return texto.strip()
+N_BOOTSTRAPS = 30
+TREE_SUBSAMPLE = 0.6
 
+rng = np.random.default_rng(42)
 
-@st.cache_data
-def cargar_suelos():
-    df = pd.read_csv("modelos/suelos.csv")
-    df["municipio_clean"] = df["municipio"].apply(limpiar_texto)
+# =========================
+# 🔧 INPUT
+# =========================
+
+def preparar_input_modelo_batch(input_base):
+
+    rows = []
+
+    for cultivo in cultivos:
+        row = input_base.copy()
+        row["nomcultivo"] = cultivo
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    df = pd.get_dummies(df)
+    df = df.reindex(columns=features_modelo, fill_value=0)
+
     return df
 
 
-df_suelos = cargar_suelos()
-
-
-@st.cache_data
-def obtener_suelo(municipio):
-    m = limpiar_texto(municipio)
-    row = df_suelos[df_suelos["municipio_clean"].str.contains(m, na=False)]
-
-    if len(row) > 0:
-        row = row.iloc[0]
-        return {
-            "suelo_arcilloso": row["suelo_arcilloso"],
-            "suelo_arenoso": row["suelo_arenoso"],
-            "suelo_fertil": row["suelo_fertil"],
-            "suelo_limitado": row["suelo_limitado"],
-        }
-
-    return {
-        "suelo_arcilloso": 30,
-        "suelo_arenoso": 30,
-        "suelo_fertil": 50,
-        "suelo_limitado": 10,
-    }
-
-# 🌦️ CLIMA ACTUAL
-@st.cache_data(ttl=1800)
-def obtener_clima_actual(lat, lon):
-    url = "https://api.openweathermap.org/data/2.5/weather"
-
-    params = {
-        "lat": lat,
-        "lon": lon,
-        "appid": api_key,
-        "units": "metric"
-    }
-
-    data = requests.get(url, params=params, timeout=5).json()
-
-    return {
-        "temp": data["main"]["temp"],
-        "precip": data.get("rain", {}).get("1h", 0)
-    }
-
-# 🌍 CLIMATOLOGÍA NASA
-@st.cache_data(ttl=86400)
-def obtener_climatologia(lat, lon):
-
-    url = "https://power.larc.nasa.gov/api/temporal/daily/point"
-
-    params = {
-        "parameters": "T2M,PRECTOTCORR",
-        "community": "AG",
-        "longitude": lon,
-        "latitude": lat,
-        "start": "20180101",
-        "end": "20231231",
-        "format": "JSON"
-    }
-
-    try:
-        r = requests.get(url, params=params, timeout=15)
-
-        if r.status_code != 200:
-            return None
-
-        data = r.json()
-        p = data["properties"]["parameter"]
-
-        temps = [v for v in p["T2M"].values() if v != -999]
-
-        precip = None
-        for key in ["PRECTOTCORR", "PRECTOT", "PRECTOT_LAND"]:
-            if key in p:
-                precip = [v for v in p[key].values() if v != -999]
-                break
-
-        if precip is None:
-            return None
-
-        return {
-            "temp_avg": sum(temps) / len(temps),
-            "precip_total": sum(precip) / (len(precip) / 365)
-        }
-
-    except:
-        return None
-
-
-@st.cache_data(ttl=3600)
-def obtener_datos_ubicacion(ubicacion):
-    url = "https://nominatim.openstreetmap.org/search"
-
-    params = {
-        "q": ubicacion,
-        "format": "json",
-        "addressdetails": 1
-    }
-
-    headers = {"User-Agent": "cultiv-ia"}
-
-    data = requests.get(url, params=params, headers=headers, timeout=5).json()
-
-    return data[0] if data else None
-
-
-def extraer_municipio(data):
-    addr = data["address"]
-    municipio = addr.get("city") or addr.get("town") or addr.get("county")
-    estado = addr.get("state")
-    return municipio, estado
+def preparar_input_cluster(input_dict):
+    df = pd.DataFrame([input_dict])
+    df = pd.get_dummies(df)
+    df = df.reindex(columns=features_cluster, fill_value=0)
+    df = df[scaler_cluster.feature_names_in_]
+    return df
 
 
 # =========================
-# HEADER
+# 🌱 TIPO CULTIVO
 # =========================
 
-col1, col2 = st.columns([1, 5])
+def obtener_tipo_cultivo_batch():
+    return dict(zip(df_tipos["nomcultivo"], df_tipos["tipo_cultivo"]))
 
-with col1:
-    st.image("https://cdn-icons-png.flaticon.com/512/2909/2909762.png", width=80)
-
-with col2:
-    st.title("🌱 Cultiv-IA")
-    st.caption("Recomendaciones inteligentes para el campo")
 
 # =========================
-# INPUT
+# 🌍 CLUSTER
 # =========================
 
-ubicacion = st.text_input("📍 Ubicación", "Texcoco, México")
+def obtener_cluster(input_base):
+    df = preparar_input_cluster(input_base)
+    df_scaled = scaler_cluster.transform(df)
+    return model_cluster.predict(df_scaled)[0]
+
 
 # =========================
-# BOTÓN
+# 🧠 BOOTSTRAP CONTROLADO
 # =========================
 
-if st.button("Analizar"):
+def bootstrap_predictions(df):
 
-    st.session_state.df_res = None
+    n_trees = len(model_reg.estimators_)
+    trees = model_reg.estimators_
 
-    with st.spinner("🌱 Analizando condiciones..."):
+    # 🔥 subset de árboles
+    n_sub = int(n_trees * TREE_SUBSAMPLE)
+    tree_idx = rng.choice(n_trees, n_sub, replace=False)
+    selected_trees = [trees[i] for i in tree_idx]
 
-        data = obtener_datos_ubicacion(ubicacion)
+    preds_boot = []
 
-        if data is None:
-            st.error("No se pudo encontrar la ubicación")
-            st.stop()
+    for _ in range(N_BOOTSTRAPS):
 
-        municipio, estado = extraer_municipio(data)
+        sample_idx = rng.choice(len(selected_trees), len(selected_trees), replace=True)
+        trees_sample = [selected_trees[i] for i in sample_idx]
 
-        lat = float(data["lat"])
-        lon = float(data["lon"])
+        preds = np.mean(
+            [tree.predict(df) for tree in trees_sample],
+            axis=0
+        )
 
-        # 🔥 NUEVO
-        actual = obtener_clima_actual(lat, lon)
-        clima = obtener_climatologia(lat, lon)
+        preds_boot.append(preds)
 
-        if clima is None:
-            clima = {
-                "temp_avg": actual["temp"],
-                "precip_total": actual["precip"] * 365
-            }
+    preds_boot = np.array(preds_boot)
 
-        suelo = obtener_suelo(municipio)
+    mean = preds_boot.mean(axis=0)
 
-        # 🔥 mezcla
-        temp_final = clima["temp_avg"] + (actual["temp"] - clima["temp_avg"]) * 0.3
+    # intervalos
+    low = np.percentile(preds_boot, 15, axis=0)
+    high = np.percentile(preds_boot, 85, axis=0)
 
-        precip_total = clima["precip_total"]
-        precip_avg = precip_total / 365
+    # regularización
+    width = high - low
+    max_width = np.maximum(mean * 0.8, 10)
 
-        input_dict = {
-            "temp_avg": temp_final,
-            "temp_max": temp_final,
-            "temp_min": temp_final,
-            "precip_total": precip_total,
-            "precip_avg": precip_avg,
-            "nomestado": "MEXICO",
-            "nomcicloproductivo": "PV",
-            "nommodalidad": "RIEGO"
-        }
+    high = np.minimum(high, mean + max_width / 2)
+    low = np.maximum(low, mean - max_width / 2)
 
-        input_dict.update(suelo)
+    return mean, low, high
 
-        df_res, cluster = recomendar_cultivos(input_dict)
-
-        st.session_state.df_res = df_res
-        st.session_state.cluster = cluster
-        st.session_state.ubicacion_data = (municipio, estado, actual, clima)
 
 # =========================
-# RESULTADOS
+# 🧠 CLASIFICACIÓN
 # =========================
 
-if st.session_state.df_res is not None:
-
-    df_res = st.session_state.df_res
-    cluster = st.session_state.cluster
-    municipio, estado, actual, clima = st.session_state.ubicacion_data
-
-    st.success(f"{municipio}, {estado}")
-
-    # 🌦️ ACTUAL
-    st.subheader("🌦️ Condición actual")
-    c1, c2 = st.columns(2)
-    c1.metric("🌡️ Temperatura actual", f"{actual['temp']:.1f} °C")
-    c2.metric("🌧️ Lluvia actual", f"{actual['precip']:.1f} mm")
-
-    # 🌍 HISTÓRICO
-    st.subheader("🌍 Climatología histórica (2018–2023)")
-    c1, c2 = st.columns(2)
-    c1.metric("🌡️ Temp promedio", f"{clima['temp_avg']:.1f} °C")
-    c2.metric("🌧️ Precipitación anual", f"{clima['precip_total']:.0f} mm")
-
-    # 🌍 cluster (TU mapping intacto)
-    cluster_map = {
-    0: "Zona agrícola de alto potencial",
-    1: "Zona arenosa productiva (requiere tecnificación)",
-    2: "Zona arcillosa tradicional",
-    3: "Zona con limitantes productivas"
-}
-
-    st.subheader("🌍 Tipo de municipio")
-    st.success(cluster_map.get(cluster, cluster))
-
-    # 🎛️ selector
-    modo = st.radio(
-        "¿Qué prefieres?",
-        ["🌾 Mayor rendimiento", "🧠 Mayor estabilidad"],
-        horizontal=True
-    )
-
-    if modo == "🌾 Mayor rendimiento":
-        df_res = df_res.sort_values(by="rendimiento", ascending=False)
+def clasificar_rendimiento(r):
+    if r > 70:
+        return "alto"
+    elif r > 40:
+        return "medio"
     else:
-        df_res = df_res.sort_values(by="score", ascending=False)
+        return "bajo"
 
-    top5 = df_res.head(5)
 
-    # 🧱 CARDS
-    for i, (_, row) in enumerate(top5.iterrows(), 1):
+# =========================
+# 🚀 MAIN
+# =========================
 
-        riesgo = row["riesgo"]
+def recomendar_cultivos(input_base, top_n=None):
 
-        st.markdown(f"""
-        <div class="card">
-            <h3>#{i} 🌱 {row['cultivo']}</h3>
-            <p><b>Tipo:</b> {row['tipo_cultivo']} | <b>Clasificación:</b> {row['clasificacion']}</p>
-        </div>
-        """, unsafe_allow_html=True)
+    df = preparar_input_modelo_batch(input_base)
 
-        col1, col2, col3 = st.columns(3)
+    mean, low, high = bootstrap_predictions(df)
 
-        col1.metric("📈 Rendimiento", f"{row['rendimiento']:.1f}")
-        col2.metric("⚠️ Riesgo", f"{riesgo:.1f}")
-        col3.metric("🧠 Score", f"{row['score']:.1f}")
+    riesgo = high - low
+    score = mean - riesgo
 
-        st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
+    tipos = obtener_tipo_cultivo_batch()
+
+    resultados = pd.DataFrame({
+        "cultivo": cultivos,
+        "tipo_cultivo": [tipos.get(c, "otro") for c in cultivos],
+        "rendimiento": mean,
+        "low": low,
+        "high": high,
+        "riesgo": riesgo,
+        "score": score
+    })
+
+    resultados["clasificacion"] = resultados["rendimiento"].apply(clasificar_rendimiento)
+
+    cluster = obtener_cluster(input_base)
+    resultados["cluster"] = cluster
+
+    resultados = resultados.sort_values(by="score", ascending=False)
+
+    if top_n:
+        resultados = resultados.head(top_n)
+
+    return resultados, cluster
