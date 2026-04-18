@@ -191,3 +191,7 @@ def obtener_cultivos_municipio(municipio):
         return cultivos  # fallback 🔥
 
     return cults
+import pandas as pd
+
+def cargar_costos(path="modelos/costos.csv"):
+    return pd.read_csv(path)
