@@ -631,6 +631,56 @@ NO agregues nada después de esa pregunta.
 
         with st.spinner("🌱 Analizando cultivo..."):
             st.write(preguntar_llm(prompt))
+            # =========================
+            # 💬 CONTINUAR CONVERSACIÓN
+            # =========================
+
+            st.markdown("---")
+            st.subheader("💬 Continuar conversación")
+
+            if "chat_history" not in st.session_state:
+                st.session_state.chat_history = []
+
+            user_msg = st.text_input("Escribe tu pregunta...")
+
+            if st.button("Enviar mensaje"):
+
+                if user_msg.strip() != "":
+
+                    st.session_state.chat_history.append({
+                        "role": "user",
+                        "content": user_msg
+                    })
+
+                    contexto = ""
+                    for m in st.session_state.chat_history[-5:]:
+                        contexto += f"{m['role']}: {m['content']}\n"
+
+                    prompt = f"""
+            Eres un ingeniero agrónomo experto en México.
+
+            Contexto:
+            {contexto}
+
+            Responde claro, breve y útil.
+            Máximo 6 líneas.
+            """
+
+                    with st.spinner("🧠 Pensando..."):
+                        respuesta = preguntar_llm(prompt)
+
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": respuesta
+                    })
+
+# mostrar historial
+            if st.session_state.chat_history:
+                for m in st.session_state.chat_history:
+                    if m["role"] == "user":
+                        st.markdown(f"**👤 Tú:** {m['content']}")
+                    else:
+                        st.markdown(f"**🌱 Asesor:** {m['content']}")
     # 🔄 RESET
     st.markdown("---")
     if st.button("🔄 ¿Quieres analizar otro municipio?"):
