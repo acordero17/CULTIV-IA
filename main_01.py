@@ -5,6 +5,10 @@ import unicodedata
 
 from utils import recomendar_cultivos
 
+# =========================
+# CONFIG
+# =========================
+
 st.set_page_config(page_title="Cultiv-IA", layout="wide")
 
 api_key = st.secrets["OPENWEATHER_API_KEY"]
@@ -23,7 +27,7 @@ if "ubicacion_data" not in st.session_state:
     st.session_state.ubicacion_data = None
 
 # =========================
-# 🎨 ESTILOS (TU UI ORIGINAL)
+# 🎨 ESTILOS
 # =========================
 
 st.markdown("""
@@ -59,16 +63,13 @@ def limpiar_texto(texto):
     )
     return texto.strip()
 
-
 @st.cache_data
 def cargar_suelos():
     df = pd.read_csv("modelos/suelos.csv")
     df["municipio_clean"] = df["municipio"].apply(limpiar_texto)
     return df
 
-
 df_suelos = cargar_suelos()
-
 
 @st.cache_data
 def obtener_suelo(municipio):
@@ -91,11 +92,11 @@ def obtener_suelo(municipio):
         "suelo_limitado": 10,
     }
 
-
-# 🌦️ CLIMA ACTUAL
+# 🌦️ CLIMA ACTUAL REAL
 @st.cache_data(ttl=1800)
-def obtener_forecast(lat, lon):
-    url = "https://api.openweathermap.org/data/2.5/forecast"
+def obtener_clima_actual(lat, lon):
+
+    url = "https://api.openweathermap.org/data/2.5/weather"
 
     params = {
         "lat": lat,
@@ -106,16 +107,12 @@ def obtener_forecast(lat, lon):
 
     data = requests.get(url, params=params, timeout=5).json()
 
-    temps = [i["main"]["temp"] for i in data["list"]]
-    lluvia = sum(i.get("rain", {}).get("3h", 0) for i in data["list"])
-
     return {
-        "temp_avg": sum(temps)/len(temps),
-        "precip_total": lluvia
+        "temp": data["main"]["temp"],
+        "precip": data.get("rain", {}).get("1h", 0)
     }
 
-
-# 🌍 NASA (ARREGLADO)
+# 🌍 NASA (PROMEDIO REAL)
 @st.cache_data(ttl=86400)
 def obtener_climatologia(lat, lon):
 
@@ -157,11 +154,15 @@ def obtener_climatologia(lat, lon):
     if precip is None:
         return None
 
-    return {
-        "temp_avg": sum(temps) / len(temps),
-        "precip_total": sum(precip),
-    }
+    temp_avg = sum(temps) / len(temps)
 
+    # 🔥 PROMEDIO ANUAL
+    precip_total = sum(precip) / (len(precip) / 365)
+
+    return {
+        "temp_avg": temp_avg,
+        "precip_total": precip_total,
+    }
 
 # 📍 GEOCODING
 @st.cache_data(ttl=3600)
@@ -188,13 +189,11 @@ def obtener_datos_ubicacion(ubicacion):
         "components": r["components"]
     }
 
-
 def extraer_municipio(data):
     comp = data["components"]
     municipio = comp.get("city") or comp.get("town") or comp.get("county")
     estado = comp.get("state")
     return municipio, estado
-
 
 # =========================
 # UI HEADER
@@ -223,7 +222,7 @@ if st.button("Analizar"):
 
     status = st.empty()
 
-    status.info("📍 Buscando coordenadas...")
+    status.info("📍 Buscando ubicación...")
     data = obtener_datos_ubicacion(ubicacion)
 
     if data is None:
@@ -236,17 +235,16 @@ if st.button("Analizar"):
     lon = data["lon"]
 
     status.info("🌦️ Obteniendo clima actual...")
-    forecast = obtener_forecast(lat, lon)
+    actual = obtener_clima_actual(lat, lon)
 
-    status.info("🌍 Obteniendo clima histórico...")
+    status.info("🌍 Obteniendo climatología...")
     clima = obtener_climatologia(lat, lon)
 
-    # 🔥 fallback SOLO si falla de verdad
     if clima is None:
-        st.warning("No se pudo obtener histórico, usando clima actual")
+        st.warning("No se pudo obtener histórico, usando fallback")
         clima = {
-            "temp_avg": forecast["temp_avg"],
-            "precip_total": forecast["precip_total"] * 50
+            "temp_avg": actual["temp"],
+            "precip_total": actual["precip"] * 365
         }
 
     status.info("🌱 Analizando suelo...")
@@ -254,7 +252,8 @@ if st.button("Analizar"):
 
     status.info("🧠 Ejecutando modelo...")
 
-    temp_final = clima["temp_avg"] + (forecast["temp_avg"] - clima["temp_avg"]) * 0.3
+    # 🔥 mezcla
+    temp_final = clima["temp_avg"] + (actual["temp"] - clima["temp_avg"]) * 0.3
 
     input_dict = {
         "temp_avg": temp_final,
@@ -278,29 +277,34 @@ if st.button("Analizar"):
     st.session_state.ubicacion_data = {
         "municipio": municipio,
         "estado": estado,
-        "forecast": forecast,
-        "clima": clima,
-        "input_dict": input_dict
+        "actual": actual,
+        "clima": clima
     }
 
 # =========================
-# RESULTADOS (TU UI)
+# RESULTADOS
 # =========================
 
 if st.session_state.df_res is not None:
 
     data = st.session_state.ubicacion_data
     df_res = st.session_state.df_res
-    cluster = st.session_state.cluster
 
     st.success(f"{data['municipio']}, {data['estado']}")
 
-    st.subheader("📊 Condiciones actuales")
+    # 🌦️ ACTUAL
+    st.subheader("🌦️ Condición actual")
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("🌡️ Temp histórica", f"{data['clima']['temp_avg']:.1f} °C")
-    col2.metric("🌦️ Temp actual", f"{data['forecast']['temp_avg']:.1f} °C")
-    col3.metric("🌧️ Precipitación", f"{data['clima']['precip_total']:.0f} mm")
+    col1, col2 = st.columns(2)
+    col1.metric("🌡️ Temperatura actual", f"{data['actual']['temp']:.1f} °C")
+    col2.metric("🌧️ Lluvia actual", f"{data['actual']['precip']:.1f} mm")
+
+    # 🌍 HISTÓRICO
+    st.subheader("🌍 Climatología histórica (2018–2023)")
+
+    col1, col2 = st.columns(2)
+    col1.metric("🌡️ Temp promedio", f"{data['clima']['temp_avg']:.1f} °C")
+    col2.metric("🌧️ Precipitación anual", f"{data['clima']['precip_total']:.0f} mm")
 
     st.info("🧠 Score = rendimiento esperado - riesgo")
 
