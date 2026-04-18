@@ -191,7 +191,17 @@ def obtener_cultivos_municipio(municipio):
         return cultivos  # fallback 🔥
 
     return cults
-import pandas as pd
 
 def cargar_costos(path="modelos/costos.csv"):
     return pd.read_csv(path)
+import pandas as pd
+
+def obtener_precios_actuales(df):
+    precios = (
+        df.sort_values("anio")
+        .groupby("nomcultivo")
+        .tail(1)[["nomcultivo","preciomediorural"]]
+        .rename(columns={"preciomediorural": "precio"})
+        .reset_index(drop=True)
+    )
+    return precios
