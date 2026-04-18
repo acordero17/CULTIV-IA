@@ -30,11 +30,13 @@ rng = np.random.default_rng(42)
 # 🔧 INPUT
 # =========================
 
-def preparar_input_modelo_batch(input_base):
+def preparar_input_modelo_batch(input_base, municipio):
+
+    cultivos_validos = obtener_cultivos_municipio(municipio)
 
     rows = []
 
-    for cultivo in cultivos:
+    for cultivo in cultivos_validos:
         row = input_base.copy()
         row["nomcultivo"] = cultivo
         rows.append(row)
@@ -43,7 +45,7 @@ def preparar_input_modelo_batch(input_base):
     df = pd.get_dummies(df)
     df = df.reindex(columns=features_modelo, fill_value=0)
 
-    return df
+    return df, cultivos_validos
 
 
 def preparar_input_cluster(input_dict):
