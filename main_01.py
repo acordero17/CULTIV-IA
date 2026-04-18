@@ -10,6 +10,14 @@ st.set_page_config(page_title="Cultiv-IA", layout="wide")
 api_key = st.secrets["OPENWEATHER_API_KEY"]
 
 # =========================
+# INIT SESSION STATE (robusto)
+# =========================
+
+for key in ["df_res", "forecast", "suelo", "input_base", "municipio", "estado"]:
+    if key not in st.session_state:
+        st.session_state[key] = None
+
+# =========================
 # HEADER
 # =========================
 
@@ -65,9 +73,7 @@ def obtener_forecast(lat, lon):
     params = {"lat": lat, "lon": lon, "appid": api_key, "units": "metric"}
     data = requests.get(url, params=params).json()
 
-    temps = []
-    lluvia = 0
-    hum = []
+    temps, lluvia, hum = [], 0, []
 
     for i in data["list"]:
         temps.append(i["main"]["temp"])
@@ -135,12 +141,16 @@ if st.button("Analizar"):
 # RESULTADOS
 # =========================
 
-if "df_res" in st.session_state:
+data_ready = all(
+    st.session_state[k] is not None
+    for k in ["df_res", "forecast", "suelo", "input_base", "municipio", "estado"]
+)
+
+if data_ready:
 
     df_res = st.session_state.df_res
     forecast = st.session_state.forecast
     suelo = st.session_state.suelo
-
     municipio = st.session_state.municipio
     estado = st.session_state.estado
 
