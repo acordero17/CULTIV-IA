@@ -167,3 +167,15 @@ def recomendar_cultivos(input_base, top_n=None):
         resultados = resultados.head(top_n)
 
     return resultados, cluster
+df_hist = pd.read_csv("modelos/cultivos_municipio.csv")
+
+def limpiar_texto(texto):
+    import unicodedata
+    texto = texto.upper()
+    texto = ''.join(
+        c for c in unicodedata.normalize('NFD', texto)
+        if unicodedata.category(c) != 'Mn'
+    )
+    return texto.strip()
+
+df_hist["municipio_clean"] = df_hist["municipio"].apply(limpiar_texto)
