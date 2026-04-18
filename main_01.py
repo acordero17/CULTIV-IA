@@ -6,6 +6,32 @@ import unicodedata
 from utils import recomendar_cultivos
 
 # =========================
+# 🤖 OPENAI
+# =========================
+
+from openai import OpenAI
+
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+def preguntar_llm(prompt):
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": "Eres un ingeniero agrónomo experto en México. Responde claro, práctico y profesional."
+            },
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.4,
+        max_tokens=300
+    )
+
+    return response.choices[0].message.content
+
+
+# =========================
 # CONFIG
 # =========================
 
@@ -95,7 +121,6 @@ def obtener_suelo(municipio):
         "suelo_limitado": 10,
     }
 
-# 🌦️ CLIMA ACTUAL
 @st.cache_data(ttl=1800)
 def obtener_clima_actual(lat, lon):
     url = "https://api.openweathermap.org/data/2.5/weather"
@@ -114,7 +139,6 @@ def obtener_clima_actual(lat, lon):
         "precip": data.get("rain", {}).get("1h", 0)
     }
 
-# 🌍 NASA
 @st.cache_data(ttl=86400)
 def obtener_climatologia(lat, lon):
 
@@ -251,11 +275,10 @@ if st.button("Analizar"):
 
         df_res, cluster = recomendar_cultivos(input_dict)
 
-        # guardar
         st.session_state.df_res = df_res
         st.session_state.cluster = cluster
         st.session_state.ubicacion_data = (municipio, estado, actual, clima)
-        st.session_state.input_dict = input_dict  # 🔥 clave para what-if
+        st.session_state.input_dict = input_dict
 
 # =========================
 # RESULTADOS
@@ -269,97 +292,72 @@ if st.session_state.df_res is not None:
 
     st.success(f"{municipio}, {estado}")
 
-    # 🌦️ ACTUAL
     st.subheader("🌦️ Condición actual")
     c1, c2 = st.columns(2)
     c1.metric("🌡️ Temperatura actual", f"{actual['temp']:.1f} °C")
     c2.metric("🌧️ Lluvia actual", f"{actual['precip']:.1f} mm")
 
-    # 🌍 HISTÓRICO
     st.subheader("🌍 Climatología histórica (2018–2023)")
     c1, c2 = st.columns(2)
     c1.metric("🌡️ Temp promedio", f"{clima['temp_avg']:.1f} °C")
     c2.metric("🌧️ Precipitación anual", f"{clima['precip_total']:.0f} mm")
 
-    # 🌍 CLUSTER
-    cluster_map = {
-        0: "Zona agrícola de alto potencial",
-        1: "Zona productiva tecnificada",
-        2: "Zona de bajo rendimiento por suelo",
-        3: "Zona con suelo arcilloso",
-        4: "Zona húmeda de bajo rendimiento"
-    }
-
     st.subheader("🌍 Tipo de municipio")
-    st.success(cluster_map.get(cluster, cluster))
+    st.success(cluster)
 
-    # 🧠 score explicación
-    st.info("🧠 Score = rendimiento esperado - riesgo (penaliza incertidumbre)")
-
-    # 🎛️ selector
-    modo = st.radio(
-        "¿Qué prefieres?",
-        ["🌾 Mayor rendimiento", "🧠 Mayor estabilidad"],
-        horizontal=True
-    )
-
-    if modo == "🌾 Mayor rendimiento":
-        df_res = df_res.sort_values(by="rendimiento", ascending=False)
-    else:
-        df_res = df_res.sort_values(by="score", ascending=False)
+    st.info("🧠 Score = rendimiento esperado - riesgo")
 
     top5 = df_res.head(5)
 
-    # 🧱 CARDS
     for i, (_, row) in enumerate(top5.iterrows(), 1):
 
-        riesgo = row["riesgo"]
+        st.markdown(f"### {i}. {row['cultivo']}")
+        st.write(f"Rendimiento: {row['rendimiento']:.1f} ton/ha")
 
-        st.markdown(f"""
-        <div class="card">
-            <h3>#{i} 🌱 {row['cultivo']}</h3>
-            <p><b>Tipo:</b> {row['tipo_cultivo']} | <b>Clasificación:</b> {row['clasificacion']}</p>
-        </div>
-        """, unsafe_allow_html=True)
+    # =========================
+    # 🧠 ASESOR
+    # =========================
 
-        col1, col2, col3 = st.columns(3)
-
-        col1.metric("📈 Rendimiento (ton/ha)", f"{row['rendimiento']:.1f}")
-        col2.metric("⚠️ Riesgo", f"{riesgo:.1f}")
-        col3.metric("🧠 Score", f"{row['score']:.1f}")
-
-        st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
-
-    # 🔬 WHAT-IF
-    st.subheader("🔬 What-if (simulación rápida)")
-
-    cultivo_sel = st.selectbox("Selecciona cultivo", df_res["cultivo"])
-
-    temp_delta = st.slider("🌡️ Cambio temperatura (°C)", -5.0, 5.0, 0.0)
-    precip_delta = st.slider("🌧️ Cambio precipitación (%)", -50, 50, 0)
-
-    if st.button("Simular escenario"):
-
-        input_mod = st.session_state.input_dict.copy()
-
-        input_mod["temp_avg"] += temp_delta
-        input_mod["temp_max"] += temp_delta
-        input_mod["temp_min"] += temp_delta
-        input_mod["precip_total"] *= (1 + precip_delta / 100)
-
-        df_new, _ = recomendar_cultivos(input_mod)
-
-        row_new = df_new[df_new["cultivo"] == cultivo_sel].iloc[0]
-
-        st.markdown("### 📊 Resultado simulado")
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("📈 Rendimiento (ton/ha)", f"{row_new['rendimiento']:.1f}")
-        c2.metric("⚠️ Riesgo", f"{row_new['riesgo']:.1f}")
-        c3.metric("🧠 Score", f"{row_new['score']:.1f}")
-
-    # 🔄 RESET
     st.markdown("---")
-    if st.button("🔄 ¿Quieres analizar otro municipio?"):
-        st.session_state.clear()
-        st.rerun()
+    st.subheader("🧠 Asesor agrícola")
+
+    decision = st.radio(
+        "¿Ya seleccionaste un cultivo?",
+        ["❓ Necesito ayuda", "✅ Ya elegí"],
+        horizontal=True
+    )
+
+    if decision == "❓ Necesito ayuda":
+
+        if st.button("Ayúdame a decidir"):
+
+            top = df_res.head(3)
+
+            prompt = f"""
+            Municipio: {municipio}
+
+            Cultivos:
+            {top[['cultivo','rendimiento','riesgo','score']].to_string()}
+
+            Recomienda el mejor cultivo y explica por qué.
+            """
+
+            st.write(preguntar_llm(prompt))
+
+    else:
+
+        cultivo_final = st.selectbox("Selecciona cultivo", df_res["cultivo"])
+
+        if st.button("Analizar cultivo"):
+
+            row = df_res[df_res["cultivo"] == cultivo_final].iloc[0]
+
+            prompt = f"""
+            Cultivo: {cultivo_final}
+            Temperatura: {actual['temp']}
+            Precipitación: {clima['precip_total']}
+
+            Explica condiciones óptimas, plagas y recomendaciones.
+            """
+
+            st.write(preguntar_llm(prompt))
