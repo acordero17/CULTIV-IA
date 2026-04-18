@@ -424,32 +424,32 @@ for i, (_, row) in enumerate(top5.iterrows(), 1):
             st.warning("⚠️ No se tiene el dato del costo actual")
 
     # 🔬 WHAT-IF
-    st.subheader("🔬 What-if (simulación rápida)")
+st.subheader("🔬 What-if (simulación rápida)")
 
-    cultivo_sel = st.selectbox("Selecciona cultivo", df_res["cultivo"],key="whatif_cultivo")
+cultivo_sel = st.selectbox("Selecciona cultivo", df_res["cultivo"],key="whatif_cultivo")
 
-    temp_delta = st.slider("🌡️ Cambio temperatura (°C)", -5.0, 5.0, 0.0,key="whatif_temp")
-    precip_delta = st.slider("🌧️ Cambio precipitación (%)", -50, 50, 0,key="whatif_precip")
+temp_delta = st.slider("🌡️ Cambio temperatura (°C)", -5.0, 5.0, 0.0,key="whatif_temp")
+precip_delta = st.slider("🌧️ Cambio precipitación (%)", -50, 50, 0,key="whatif_precip")
 
-    if st.button("Simular escenario",key="whatif_btn"):
+if st.button("Simular escenario",key="whatif_btn"):
 
-        input_mod = st.session_state.input_dict.copy()
+    input_mod = st.session_state.input_dict.copy()
 
-        input_mod["temp_avg"] += temp_delta
-        input_mod["temp_max"] += temp_delta
-        input_mod["temp_min"] += temp_delta
-        input_mod["precip_total"] *= (1 + precip_delta / 100)
+    input_mod["temp_avg"] += temp_delta
+    input_mod["temp_max"] += temp_delta
+    input_mod["temp_min"] += temp_delta
+    input_mod["precip_total"] *= (1 + precip_delta / 100)
 
-        df_new, _ = recomendar_cultivos(input_mod,municipio)
+    df_new, _ = recomendar_cultivos(input_mod,municipio)
 
-        row_new = df_new[df_new["cultivo"] == cultivo_sel].iloc[0]
+    row_new = df_new[df_new["cultivo"] == cultivo_sel].iloc[0]
 
-        st.markdown("### 📊 Resultado simulado")
+    st.markdown("### 📊 Resultado simulado")
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("📈 Rendimiento (ton/ha)", f"{row_new['rendimiento']:.1f}")
-        c2.metric("⚠️ Riesgo", f"{row_new['riesgo']:.1f}")
-        c3.metric("🧠 Score", f"{row_new['score']:.1f}")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("📈 Rendimiento (ton/ha)", f"{row_new['rendimiento']:.1f}")
+    c2.metric("⚠️ Riesgo", f"{row_new['riesgo']:.1f}")
+    c3.metric("🧠 Score", f"{row_new['score']:.1f}")
 
 # =========================
 # 🧠 ASESOR AGRÍCOLA (INTERACTIVO)
