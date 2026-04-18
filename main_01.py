@@ -14,14 +14,6 @@ st.set_page_config(page_title="Cultiv-IA", layout="wide")
 api_key = st.secrets["OPENWEATHER_API_KEY"]
 
 # =========================
-# RESET SEGURO
-# =========================
-
-if "ubicacion_data" in st.session_state:
-    if isinstance(st.session_state.ubicacion_data, tuple):
-        st.session_state.ubicacion_data = None
-
-# =========================
 # SESSION STATE
 # =========================
 
@@ -171,11 +163,7 @@ with col2:
 # INPUT
 # =========================
 
-ubicacion = st.text_input(
-    "📍 Ubicación",
-    "Texcoco, México",
-    key="ubicacion_input"
-)
+ubicacion = st.text_input("📍 Ubicación", "Texcoco, México")
 
 # =========================
 # BOTÓN
@@ -183,6 +171,7 @@ ubicacion = st.text_input(
 
 if st.button("Analizar"):
 
+    # 🔥 fuerza recalculo solo al hacer click
     st.session_state.df_res = None
 
     with st.spinner("🌱 Analizando condiciones..."):
@@ -219,12 +208,10 @@ if st.button("Analizar"):
 
         df_res, cluster = recomendar_cultivos(input_dict)
 
+        # guardar estado
         st.session_state.df_res = df_res
         st.session_state.cluster = cluster
-        st.session_state.ubicacion_data = {
-            "municipio": municipio,
-            "estado": estado
-        }
+        st.session_state.ubicacion_data = (municipio, estado)
 
 # =========================
 # RESULTADOS
@@ -232,15 +219,13 @@ if st.button("Analizar"):
 
 if st.session_state.df_res is not None:
 
-    df_res = st.session_state.df_res.copy()
+    df_res = st.session_state.df_res
     cluster = st.session_state.cluster
-
-    ubicacion_data = st.session_state.ubicacion_data
-    municipio = ubicacion_data["municipio"]
-    estado = ubicacion_data["estado"]
+    municipio, estado = st.session_state.ubicacion_data
 
     st.success(f"{municipio}, {estado}")
 
+    # 🌍 cluster
     cluster_map = {
         0: "Zona agrícola de alto potencial",
         1: "Zona productiva tecnificada",
@@ -252,31 +237,7 @@ if st.session_state.df_res is not None:
     st.subheader("🌍 Tipo de municipio")
     st.success(cluster_map.get(cluster, cluster))
 
-    # =========================
-    # 🎛️ FILTRO
-    # =========================
-
-    st.subheader("🎛️ Filtrar recomendaciones")
-
-    tipos_disponibles = sorted(df_res["tipo_cultivo"].unique().tolist())
-
-    tipo_seleccionado = st.multiselect(
-        "🌱 Tipo de cultivo",
-        ["Todos"] + tipos_disponibles,
-        default=["Todos"]
-    )
-
-    if "Todos" not in tipo_seleccionado:
-        df_res = df_res[df_res["tipo_cultivo"].isin(tipo_seleccionado)]
-
-    if df_res.empty:
-        st.warning("No hay cultivos disponibles para ese filtro")
-        st.stop()
-
-    # =========================
-    # 🔀 MODO
-    # =========================
-
+    # 🎛️ selector
     modo = st.radio(
         "¿Qué prefieres?",
         ["🌾 Mayor rendimiento", "🧠 Mayor estabilidad"],
@@ -290,11 +251,10 @@ if st.session_state.df_res is not None:
 
     top5 = df_res.head(5)
 
-    # =========================
     # 🧱 CARDS
-    # =========================
-
     for i, (_, row) in enumerate(top5.iterrows(), 1):
+
+        riesgo = row["riesgo"]
 
         st.markdown(f"""
         <div class="card">
@@ -306,25 +266,7 @@ if st.session_state.df_res is not None:
         col1, col2, col3 = st.columns(3)
 
         col1.metric("📈 Rendimiento", f"{row['rendimiento']:.1f}")
-        col2.metric("⚠️ Riesgo", f"{row['riesgo']:.1f}")
+        col2.metric("⚠️ Riesgo", f"{riesgo:.1f}")
         col3.metric("🧠 Score", f"{row['score']:.1f}")
 
         st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
-
-    # =========================
-    # 🔄 RESET
-    # =========================
-
-    st.markdown("---")
-    st.info("¿Quieres probar otra zona?")
-
-    if st.button("🔄 Analizar otra ubicación"):
-
-        st.session_state.df_res = None
-        st.session_state.cluster = None
-        st.session_state.ubicacion_data = None
-
-        if "ubicacion_input" in st.session_state:
-            del st.session_state["ubicacion_input"]
-
-        st.rerun()
