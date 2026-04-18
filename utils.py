@@ -17,15 +17,32 @@ features_cluster = joblib.load("modelos/features_cluster.pkl")
 cultivos = joblib.load("modelos/cultivos.pkl")
 df_tipos = pd.read_csv("modelos/tipos_cultivo.csv")
 
+# =========================
+# ⚙️ CONFIG TURBO
+# =========================
+
+N_BOOTSTRAPS = 30   # 🔥 balance velocidad/precisión
+TREE_SUBSAMPLE = 0.6  # usar 60% de árboles
+
+rng = np.random.default_rng(42)
 
 # =========================
-# 🔧 INPUT MODELO
+# 🔧 INPUT
 # =========================
 
-def preparar_input_modelo(input_dict):
-    df = pd.DataFrame([input_dict])
+def preparar_input_modelo_batch(input_base):
+
+    rows = []
+
+    for cultivo in cultivos:
+        row = input_base.copy()
+        row["nomcultivo"] = cultivo
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
     df = pd.get_dummies(df)
     df = df.reindex(columns=features_modelo, fill_value=0)
+
     return df
 
 
@@ -33,10 +50,7 @@ def preparar_input_cluster(input_dict):
     df = pd.DataFrame([input_dict])
     df = pd.get_dummies(df)
     df = df.reindex(columns=features_cluster, fill_value=0)
-
-    # 🔥 alinear con scaler
     df = df[scaler_cluster.feature_names_in_]
-
     return df
 
 
@@ -44,11 +58,8 @@ def preparar_input_cluster(input_dict):
 # 🌱 TIPO CULTIVO
 # =========================
 
-def obtener_tipo_cultivo(cultivo):
-    row = df_tipos[df_tipos["nomcultivo"] == cultivo]
-    if len(row) > 0:
-        return row["tipo_cultivo"].values[0]
-    return "otro"
+def obtener_tipo_cultivo_batch():
+    return dict(zip(df_tipos["nomcultivo"], df_tipos["tipo_cultivo"]))
 
 
 # =========================
@@ -62,7 +73,53 @@ def obtener_cluster(input_base):
 
 
 # =========================
-# 🧠 CLASIFICACIÓN POR REGLAS
+# 🧠 BOOTSTRAP CONTROLADO
+# =========================
+
+def bootstrap_predictions(df):
+
+    n_trees = len(model_reg.estimators_)
+    trees = model_reg.estimators_
+
+    # 🔥 seleccionar subset de árboles
+    n_sub = int(n_trees * TREE_SUBSAMPLE)
+    tree_idx = rng.choice(n_trees, n_sub, replace=False)
+    selected_trees = [trees[i] for i in tree_idx]
+
+    preds_boot = []
+
+    for _ in range(N_BOOTSTRAPS):
+
+        sample_idx = rng.choice(len(selected_trees), len(selected_trees), replace=True)
+        trees_sample = [selected_trees[i] for i in sample_idx]
+
+        preds = np.mean(
+            [tree.predict(df) for tree in trees_sample],
+            axis=0
+        )
+
+        preds_boot.append(preds)
+
+    preds_boot = np.array(preds_boot)
+
+    mean = preds_boot.mean(axis=0)
+
+    # 🔥 intervalos robustos
+    low = np.percentile(preds_boot, 15, axis=0)
+    high = np.percentile(preds_boot, 85, axis=0)
+
+    # 🔥 regularización de amplitud
+    width = high - low
+    max_width = np.maximum(mean * 0.8, 10)  # límite dinámico
+
+    high = np.minimum(high, mean + max_width / 2)
+    low = np.maximum(low, mean - max_width / 2)
+
+    return mean, low, high
+
+
+# =========================
+# 🧠 CLASIFICACIÓN
 # =========================
 
 def clasificar_rendimiento(r):
@@ -80,56 +137,33 @@ def clasificar_rendimiento(r):
 
 def recomendar_cultivos(input_base, top_n=None):
 
-    resultados = []
+    df = preparar_input_modelo_batch(input_base)
+
+    mean, low, high = bootstrap_predictions(df)
+
+    riesgo = high - low
+    score = mean - riesgo
+
+    tipos = obtener_tipo_cultivo_batch()
+
+    resultados = pd.DataFrame({
+        "cultivo": cultivos,
+        "tipo_cultivo": [tipos.get(c, "otro") for c in cultivos],
+        "rendimiento": mean,
+        "low": low,
+        "high": high,
+        "riesgo": riesgo,
+        "score": score
+    })
+
+    resultados["clasificacion"] = resultados["rendimiento"].apply(clasificar_rendimiento)
 
     cluster = obtener_cluster(input_base)
+    resultados["cluster"] = cluster
 
-    for cultivo in cultivos:
+    resultados = resultados.sort_values(by="score", ascending=False)
 
-        try:
-            input_dict = input_base.copy()
-            input_dict["nomcultivo"] = cultivo
+    if top_n:
+        resultados = resultados.head(top_n)
 
-            df = preparar_input_modelo(input_dict)
-
-            preds = [tree.predict(df)[0] for tree in model_reg.estimators_]
-
-            mean = float(np.mean(preds))
-            low = float(np.percentile(preds, 10))
-            high = float(np.percentile(preds, 90))
-
-            riesgo = high - low
-            score = mean - riesgo
-
-            clase = clasificar_rendimiento(mean)
-            tipo = obtener_tipo_cultivo(cultivo)
-
-            resultados.append({
-                "cultivo": cultivo,
-                "tipo_cultivo": tipo,
-                "rendimiento": mean,
-                "low": low,
-                "high": high,
-                "riesgo": riesgo,
-                "clasificacion": clase,
-                "cluster": cluster,
-                "score": score
-            })
-
-        except Exception as e:
-            print(f"Error {cultivo}: {e}")
-
-    df_res = pd.DataFrame(resultados)
-
-    if df_res.empty:
-        return None, cluster
-
-    # asegurar tipos
-    cols = ["rendimiento", "low", "high", "riesgo", "score"]
-    for col in cols:
-        df_res[col] = pd.to_numeric(df_res[col], errors="coerce")
-
-    # orden base por score (default)
-    df_res = df_res.sort_values(by="score", ascending=False)
-
-    return df_res, cluster
+    return resultados, cluster
