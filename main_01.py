@@ -171,7 +171,11 @@ with col2:
 # INPUT
 # =========================
 
-ubicacion = st.text_input("📍 Ubicación", "Texcoco, México")
+ubicacion = st.text_input(
+    "📍 Ubicación",
+    "Texcoco, México",
+    key="ubicacion_input"
+)
 
 # =========================
 # BOTÓN
@@ -250,7 +254,7 @@ if st.session_state.df_res is not None:
     st.success(cluster_map.get(cluster, cluster))
 
     # =========================
-    # 🎛️ FILTRO TIPO CULTIVO
+    # 🎛️ FILTRO
     # =========================
 
     st.subheader("🎛️ Filtrar recomendaciones")
@@ -307,3 +311,19 @@ if st.session_state.df_res is not None:
         col3.metric("🧠 Score", f"{row['score']:.1f}")
 
         st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
+
+    # =========================
+    # 🔄 RESET UX
+    # =========================
+
+    st.markdown("---")
+    st.info("¿Quieres probar otra zona?")
+
+    if st.button("🔄 Analizar otra ubicación"):
+
+        st.session_state.df_res = None
+        st.session_state.cluster = None
+        st.session_state.ubicacion_data = None
+        st.session_state["ubicacion_input"] = ""
+
+        st.rerun()
