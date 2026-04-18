@@ -426,12 +426,12 @@ for i, (_, row) in enumerate(top5.iterrows(), 1):
     # 🔬 WHAT-IF
     st.subheader("🔬 What-if (simulación rápida)")
 
-    cultivo_sel = st.selectbox("Selecciona cultivo", df_res["cultivo"])
+    cultivo_sel = st.selectbox("Selecciona cultivo", df_res["cultivo"],key="whatif_cultivo")
 
-    temp_delta = st.slider("🌡️ Cambio temperatura (°C)", -5.0, 5.0, 0.0)
-    precip_delta = st.slider("🌧️ Cambio precipitación (%)", -50, 50, 0)
+    temp_delta = st.slider("🌡️ Cambio temperatura (°C)", -5.0, 5.0, 0.0,key="whatif_temp")
+    precip_delta = st.slider("🌧️ Cambio precipitación (%)", -50, 50, 0,key="whatif_precip")
 
-    if st.button("Simular escenario"):
+    if st.button("Simular escenario",key="whatif_btn"):
 
         input_mod = st.session_state.input_dict.copy()
 
