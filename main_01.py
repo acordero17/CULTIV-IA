@@ -322,106 +322,106 @@ if st.button("Analizar"):
 # RESULTADOS
 # =========================
 
-if st.session_state.df_res is not None:
+# 🔒 VALIDACIÓN GLOBAL
+if st.session_state.df_res is None:
+    st.stop()
 
-    df_res = st.session_state.df_res
-    cluster = st.session_state.cluster
-    municipio, estado, actual, clima = st.session_state.ubicacion_data
+# 👉 ahora sí puedes usar variables
+df_res = st.session_state.df_res
+cluster = st.session_state.cluster
+municipio, estado, actual, clima = st.session_state.ubicacion_data
 
-    st.success(f"{municipio}, {estado}")
+st.success(f"{municipio}, {estado}")
 
-    # 🌦️ ACTUAL
-    st.subheader("🌦️ Condición actual")
-    c1, c2 = st.columns(2)
-    c1.metric("🌡️ Temperatura actual", f"{actual['temp']:.1f} °C")
-    c2.metric("🌧️ Lluvia actual", f"{actual['precip']:.1f} mm")
+# 🌦️ ACTUAL
+st.subheader("🌦️ Condición actual")
+c1, c2 = st.columns(2)
+c1.metric("🌡️ Temperatura actual", f"{actual['temp']:.1f} °C")
+c2.metric("🌧️ Lluvia actual", f"{actual['precip']:.1f} mm")
 
-    # 🌍 HISTÓRICO
-    st.subheader("🌍 Climatología histórica (2018–2023)")
-    c1, c2 = st.columns(2)
-    c1.metric("🌡️ Temp promedio", f"{clima['temp_avg']:.1f} °C")
-    c2.metric("🌧️ Precipitación anual", f"{clima['precip_total']:.0f} mm")
+# 🌍 HISTÓRICO
+st.subheader("🌍 Climatología histórica (2018–2023)")
+c1, c2 = st.columns(2)
+c1.metric("🌡️ Temp promedio", f"{clima['temp_avg']:.1f} °C")
+c2.metric("🌧️ Precipitación anual", f"{clima['precip_total']:.0f} mm")
 
-    # 🌍 CLUSTER
-    cluster_map = {
-        0: "Zona agrícola de alto potencial",
-        1: "Zona productiva tecnificada",
-        2: "Zona de bajo rendimiento por suelo",
-        3: "Zona con suelo arcilloso",
-        4: "Zona húmeda de bajo rendimiento"
-    }
+# 🌍 CLUSTER
+cluster_map = {
+    0: "Zona agrícola de alto potencial",
+    1: "Zona productiva tecnificada",
+    2: "Zona de bajo rendimiento por suelo",
+    3: "Zona con suelo arcilloso",
+    4: "Zona húmeda de bajo rendimiento"
+}
 
-    st.subheader("🌍 Tipo de municipio")
-    st.success(cluster_map.get(cluster, cluster))
+st.subheader("🌍 Tipo de municipio")
+st.success(cluster_map.get(cluster, cluster))
 
-    # 🧠 score explicación
-    st.info("🧠 Score = rendimiento esperado - riesgo (penaliza incertidumbre)")
+# 🧠 score explicación
+st.info("🧠 Score = rendimiento esperado - riesgo (penaliza incertidumbre)")
 
-    # 🎛️ selector
-    modo = st.radio(
-        "¿Qué prefieres?",
-        ["🌾 Mayor rendimiento", "🧠 Mayor estabilidad"],
-        horizontal=True
-    )
+# 🎛️ selector
+modo = st.radio(
+    "¿Qué prefieres?",
+    ["🌾 Mayor rendimiento", "🧠 Mayor estabilidad"],
+    horizontal=True
+)
 
-    if modo == "🌾 Mayor rendimiento":
-        df_res = df_res.sort_values(by="rendimiento", ascending=False)
-    else:
-        df_res = df_res.sort_values(by="score", ascending=False)
+if modo == "🌾 Mayor rendimiento":
+    df_res = df_res.sort_values(by="rendimiento", ascending=False)
+else:
+    df_res = df_res.sort_values(by="score", ascending=False)
 
-    top5 = df_res.head(5)
+top5 = df_res.head(5)
 
-    # 🧱 CARDS
-    for i, (_, row) in enumerate(top5.iterrows(), 1):
+# 🧱 CARDS
+for i, (_, row) in enumerate(top5.iterrows(), 1):
 
-        riesgo = row["riesgo"]
+    riesgo = row["riesgo"]
 
-        st.markdown(f"""
-        <div class="card">
-            <h3>#{i} 🌱 {row['cultivo']}</h3>
-            <p><b>Tipo:</b> {row['tipo_cultivo']} | <b>Clasificación:</b> {row['clasificacion']}</p>
-        </div>
-        """, unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="card">
+        <h3>#{i} 🌱 {row['cultivo']}</h3>
+        <p><b>Tipo:</b> {row['tipo_cultivo']} | <b>Clasificación:</b> {row['clasificacion']}</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-        col1, col2, col3 = st.columns(3)
+    col1, col2, col3 = st.columns(3)
 
-        col1.metric("📈 Rendimiento (ton/ha)", f"{row['rendimiento']:.1f}")
-        col2.metric("⚠️ Riesgo", f"{riesgo:.1f}")
-        col3.metric("🧠 Score", f"{row['score']:.1f}")
+    col1.metric("📈 Rendimiento (ton/ha)", f"{row['rendimiento']:.1f}")
+    col2.metric("⚠️ Riesgo", f"{riesgo:.1f}")
+    col3.metric("🧠 Score", f"{row['score']:.1f}")
 
-        st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
-        # 🔥 ECONÓMICO
-        if "df_economico" in st.session_state:
+    st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
 
-            df_econ = st.session_state.df_economico
+    # 🔥 ECONÓMICO
+    if "df_economico" in st.session_state:
 
-            cultivo_nombre = row["cultivo"].lower().strip()
+        df_econ = st.session_state.df_economico
+        cultivo_nombre = row["cultivo"].lower().strip()
 
-            row_econ = df_econ[
-                df_econ["nomcultivo"] == cultivo_nombre
-            ]
+        row_econ = df_econ[df_econ["nomcultivo"] == cultivo_nombre]
 
-            if not row_econ.empty:
+        if not row_econ.empty:
 
-                costo = row_econ["costo"].values[0]
-                precio = row_econ["precio"].values[0]
+            costo = row_econ["costo"].values[0]
+            precio = row_econ["precio"].values[0]
 
-                if pd.notna(costo) and pd.notna(precio):
+            if pd.notna(costo) and pd.notna(precio):
 
-            # 👉 ganancia por ha
-                    ingreso = row["rendimiento"] * precio
-                    ganancia = ingreso - costo
+                ingreso = row["rendimiento"] * precio
+                ganancia = ingreso - costo
 
-                    if ganancia > 0:
-                        st.success(f"💰 Ganancia estimada: ${ganancia:,.0f} / ha")
-                    else:
-                        st.error(f"📉 Pérdida estimada: ${ganancia:,.0f} / ha")
-
+                if ganancia > 0:
+                    st.success(f"💰 Ganancia estimada: ${ganancia:,.0f} / ha")
                 else:
-                    st.warning("⚠️ No se tiene el dato del costo actual")
+                    st.error(f"📉 Pérdida estimada: ${ganancia:,.0f} / ha")
 
             else:
                 st.warning("⚠️ No se tiene el dato del costo actual")
+
+        else:
+            st.warning("⚠️ No se tiene el dato del costo actual")
 
     # 🔬 WHAT-IF
     st.subheader("🔬 What-if (simulación rápida)")
@@ -690,5 +690,9 @@ NO agregues nada después de esa pregunta.
     # 🔄 RESET
     st.markdown("---")
     if st.button("🔄 ¿Quieres analizar otro municipio?"):
-        st.session_state.clear()
-        st.rerun()
+
+    for key in ["df_res", "cluster", "ubicacion_data", "input_dict", "chat_history"]:
+        if key in st.session_state:
+            del st.session_state[key]
+
+    st.rerun()
