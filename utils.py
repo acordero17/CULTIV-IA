@@ -179,3 +179,13 @@ def limpiar_texto(texto):
     return texto.strip()
 
 df_hist["municipio_clean"] = df_hist["municipio"].apply(limpiar_texto)
+def obtener_cultivos_municipio(municipio):
+
+    m = limpiar_texto(municipio)
+
+    cults = df_hist[df_hist["municipio_clean"] == m]["nomcultivo"].unique()
+
+    if len(cults) == 0:
+        return cultivos  # fallback 🔥
+
+    return cults
