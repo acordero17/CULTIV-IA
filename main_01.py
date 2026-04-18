@@ -14,6 +14,14 @@ st.set_page_config(page_title="Cultiv-IA", layout="wide")
 api_key = st.secrets["OPENWEATHER_API_KEY"]
 
 # =========================
+# 🛡️ FIX SESSION STATE (IMPORTANTE)
+# =========================
+
+if "ubicacion_data" in st.session_state:
+    if not isinstance(st.session_state.ubicacion_data, dict):
+        st.session_state.clear()
+
+# =========================
 # SESSION STATE
 # =========================
 
@@ -211,8 +219,8 @@ if st.button("Analizar"):
 
     municipio, estado = extraer_municipio(data)
 
-    lat = float(data["lat"])
-    lon = float(data["lon"])
+    lat = data["lat"]
+    lon = data["lon"]
 
     status.info("🌦️ Obteniendo clima...")
     forecast = obtener_forecast(lat, lon)
@@ -241,9 +249,17 @@ if st.button("Analizar"):
 
     status.empty()
 
+    # 🔥 AHORA USAMOS DICT (no tupla)
+    st.session_state.ubicacion_data = {
+        "municipio": municipio,
+        "estado": estado,
+        "forecast": forecast,
+        "suelo": suelo,
+        "input_dict": input_dict
+    }
+
     st.session_state.df_res = df_res
     st.session_state.cluster = cluster
-    st.session_state.ubicacion_data = (municipio, estado, forecast, suelo, input_dict)
 
 # =========================
 # RESULTADOS
@@ -251,13 +267,20 @@ if st.button("Analizar"):
 
 if st.session_state.df_res is not None:
 
+    data = st.session_state.ubicacion_data
+
+    municipio = data["municipio"]
+    estado = data["estado"]
+    forecast = data["forecast"]
+    suelo = data["suelo"]
+    input_dict = data["input_dict"]
+
     df_res = st.session_state.df_res
     cluster = st.session_state.cluster
-    municipio, estado, forecast, suelo, input_dict = st.session_state.ubicacion_data
 
     st.success(f"{municipio}, {estado}")
 
-    # DATOS MUNICIPIO
+    # DATOS
     st.subheader("📊 Condiciones actuales")
 
     col1, col2, col3 = st.columns(3)
@@ -279,7 +302,7 @@ if st.session_state.df_res is not None:
 
     st.info("🧠 Score = rendimiento esperado - riesgo")
 
-    # MODO
+    # RESULTADOS
     modo = st.radio(
         "¿Qué prefieres?",
         ["🌾 Mayor rendimiento", "🧠 Mayor estabilidad"],
