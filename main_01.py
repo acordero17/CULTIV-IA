@@ -21,7 +21,7 @@ def preguntar_llm(prompt):
             {
                 "role": "system",
                 "content": """
-Eres un ingeniero agrónomo experto en México.
+Eres un ingeniero agrónomo experto en México con experiencia en toma de decisiones agrícolas.
 
 Ayudas a productores a decidir qué cultivar usando:
 - clima
@@ -29,11 +29,18 @@ Ayudas a productores a decidir qué cultivar usando:
 - rendimiento estimado
 - riesgo
 
-Responde:
-- claro
-- práctico
-- sin tecnicismos innecesarios
-- con recomendaciones accionables
+Reglas:
+- Explica claro y práctico
+- No uses lenguaje académico
+- Da recomendaciones accionables
+- Usa SOLO el contexto proporcionado
+- Compara opciones cuando sea necesario
+- Señala riesgos reales
+
+Siempre que puedas:
+- recomienda el mejor cultivo
+- menciona alternativas
+- da consejos prácticos
 """
             },
             {"role": "user", "content": prompt}
@@ -66,6 +73,33 @@ if "cluster" not in st.session_state:
 if "ubicacion_data" not in st.session_state:
     st.session_state.ubicacion_data = None
 
+if "input_dict" not in st.session_state:
+    st.session_state.input_dict = None
+
+# =========================
+# 🎨 ESTILOS
+# =========================
+
+st.markdown("""
+<style>
+.stApp {
+    background: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)),
+    url("https://images.unsplash.com/photo-1500382017468-9049fed747ef");
+    background-size: cover;
+}
+.block-container {
+    background: rgba(0,0,0,0.5);
+    padding: 2rem;
+    border-radius: 16px;
+}
+.card {
+    background: rgba(255,255,255,0.08);
+    padding: 15px;
+    border-radius: 12px;
+    margin-bottom: 15px;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # =========================
 # FUNCIONES
@@ -87,13 +121,19 @@ def cargar_suelos():
 
 df_suelos = cargar_suelos()
 
+@st.cache_data
 def obtener_suelo(municipio):
     m = limpiar_texto(municipio)
     row = df_suelos[df_suelos["municipio_clean"].str.contains(m, na=False)]
 
     if len(row) > 0:
         row = row.iloc[0]
-        return row.to_dict()
+        return {
+            "suelo_arcilloso": row["suelo_arcilloso"],
+            "suelo_arenoso": row["suelo_arenoso"],
+            "suelo_fertil": row["suelo_fertil"],
+            "suelo_limitado": row["suelo_limitado"],
+        }
 
     return {
         "suelo_arcilloso": 30,
@@ -102,22 +142,81 @@ def obtener_suelo(municipio):
         "suelo_limitado": 10,
     }
 
+@st.cache_data(ttl=1800)
 def obtener_clima_actual(lat, lon):
     url = "https://api.openweathermap.org/data/2.5/weather"
-    params = {"lat": lat, "lon": lon, "appid": api_key, "units": "metric"}
-    data = requests.get(url, params=params).json()
+
+    params = {
+        "lat": lat,
+        "lon": lon,
+        "appid": api_key,
+        "units": "metric"
+    }
+
+    data = requests.get(url, params=params, timeout=5).json()
 
     return {
         "temp": data["main"]["temp"],
         "precip": data.get("rain", {}).get("1h", 0)
     }
 
+@st.cache_data(ttl=86400)
+def obtener_climatologia(lat, lon):
+
+    url = "https://power.larc.nasa.gov/api/temporal/daily/point"
+
+    params = {
+        "parameters": "T2M,PRECTOTCORR",
+        "community": "AG",
+        "longitude": lon,
+        "latitude": lat,
+        "start": "20180101",
+        "end": "20231231",
+        "format": "JSON"
+    }
+
+    try:
+        r = requests.get(url, params=params, timeout=15)
+
+        if r.status_code != 200:
+            return None
+
+        data = r.json()
+        p = data["properties"]["parameter"]
+
+        temps = [v for v in p["T2M"].values() if v != -999]
+
+        precip = None
+        for key in ["PRECTOTCORR", "PRECTOT", "PRECTOT_LAND"]:
+            if key in p:
+                precip = [v for v in p[key].values() if v != -999]
+                break
+
+        if precip is None:
+            return None
+
+        return {
+            "temp_avg": sum(temps) / len(temps),
+            "precip_total": sum(precip) / (len(precip) / 365)
+        }
+
+    except:
+        return None
+
+@st.cache_data(ttl=3600)
 def obtener_datos_ubicacion(ubicacion):
     url = "https://nominatim.openstreetmap.org/search"
-    params = {"q": ubicacion, "format": "json", "addressdetails": 1}
+
+    params = {
+        "q": ubicacion,
+        "format": "json",
+        "addressdetails": 1
+    }
+
     headers = {"User-Agent": "cultiv-ia"}
 
-    data = requests.get(url, params=params, headers=headers).json()
+    data = requests.get(url, params=params, headers=headers, timeout=5).json()
+
     return data[0] if data else None
 
 def extraer_municipio(data):
@@ -126,54 +225,81 @@ def extraer_municipio(data):
     estado = addr.get("state")
     return municipio, estado
 
+# =========================
+# HEADER
+# =========================
+
+col1, col2 = st.columns([1, 5])
+
+with col1:
+    st.image("https://cdn-icons-png.flaticon.com/512/2909/2909762.png", width=80)
+
+with col2:
+    st.title("🌱 Cultiv-IA")
+    st.caption("Recomendaciones inteligentes para el campo")
 
 # =========================
-# UI
+# INPUT
 # =========================
-
-st.title("🌱 Cultiv-IA")
 
 ubicacion = st.text_input("📍 Ubicación", "Texcoco, México")
 
 # =========================
-# ANALIZAR
+# BOTÓN
 # =========================
 
 if st.button("Analizar"):
 
-    data = obtener_datos_ubicacion(ubicacion)
+    st.session_state.df_res = None
 
-    if data is None:
-        st.error("No se encontró la ubicación")
-        st.stop()
+    with st.spinner("🌱 Analizando condiciones..."):
 
-    municipio, estado = extraer_municipio(data)
+        data = obtener_datos_ubicacion(ubicacion)
 
-    lat = float(data["lat"])
-    lon = float(data["lon"])
+        if data is None:
+            st.error("No se pudo encontrar la ubicación")
+            st.stop()
 
-    actual = obtener_clima_actual(lat, lon)
-    suelo = obtener_suelo(municipio)
+        municipio, estado = extraer_municipio(data)
 
-    input_dict = {
-        "temp_avg": actual["temp"],
-        "temp_max": actual["temp"],
-        "temp_min": actual["temp"],
-        "precip_total": actual["precip"] * 365,
-        "precip_avg": actual["precip"],
-        "nomestado": "MEXICO",
-        "nomcicloproductivo": "PV",
-        "nommodalidad": "RIEGO"
-    }
+        lat = float(data["lat"])
+        lon = float(data["lon"])
 
-    input_dict.update(suelo)
+        actual = obtener_clima_actual(lat, lon)
+        clima = obtener_climatologia(lat, lon)
 
-    df_res, cluster = recomendar_cultivos(input_dict)
+        if clima is None:
+            clima = {
+                "temp_avg": actual["temp"],
+                "precip_total": actual["precip"] * 365
+            }
 
-    st.session_state.df_res = df_res
-    st.session_state.cluster = cluster
-    st.session_state.ubicacion_data = (municipio, estado, actual)
+        suelo = obtener_suelo(municipio)
 
+        temp_final = clima["temp_avg"] + (actual["temp"] - clima["temp_avg"]) * 0.3
+
+        precip_total = clima["precip_total"]
+        precip_avg = precip_total / 365
+
+        input_dict = {
+            "temp_avg": temp_final,
+            "temp_max": temp_final,
+            "temp_min": temp_final,
+            "precip_total": precip_total,
+            "precip_avg": precip_avg,
+            "nomestado": "MEXICO",
+            "nomcicloproductivo": "PV",
+            "nommodalidad": "RIEGO"
+        }
+
+        input_dict.update(suelo)
+
+        df_res, cluster = recomendar_cultivos(input_dict)
+
+        st.session_state.df_res = df_res
+        st.session_state.cluster = cluster
+        st.session_state.ubicacion_data = (municipio, estado, actual, clima)
+        st.session_state.input_dict = input_dict
 
 # =========================
 # RESULTADOS
@@ -182,29 +308,46 @@ if st.button("Analizar"):
 if st.session_state.df_res is not None:
 
     df_res = st.session_state.df_res
-    municipio, estado, actual = st.session_state.ubicacion_data
+    cluster = st.session_state.cluster
+    municipio, estado, actual, clima = st.session_state.ubicacion_data
 
     st.success(f"{municipio}, {estado}")
 
-    st.subheader("🌾 Mejores cultivos")
+    st.subheader("🌦️ Condición actual")
+    c1, c2 = st.columns(2)
+    c1.metric("🌡️ Temperatura actual", f"{actual['temp']:.1f} °C")
+    c2.metric("🌧️ Lluvia actual", f"{actual['precip']:.1f} mm")
 
-    for _, row in df_res.head(5).iterrows():
-        st.write(f"{row['cultivo']} → {row['rendimiento']:.1f} ton/ha")
+    st.subheader("🌍 Climatología histórica (2018–2023)")
+    c1, c2 = st.columns(2)
+    c1.metric("🌡️ Temp promedio", f"{clima['temp_avg']:.1f} °C")
+    c2.metric("🌧️ Precipitación anual", f"{clima['precip_total']:.0f} mm")
+
+    st.subheader("🌍 Tipo de municipio")
+    st.success(cluster)
+
+    st.info("🧠 Score = rendimiento esperado - riesgo")
+
+    top5 = df_res.head(5)
+
+    for i, (_, row) in enumerate(top5.iterrows(), 1):
+
+        st.markdown(f"### {i}. {row['cultivo']}")
+        st.write(f"Rendimiento: {row['rendimiento']:.1f} ton/ha")
 
     # =========================
-    # 🧠 ASESOR (AHORA SÍ FUNCIONA)
+    # 🧠 ASESOR AGRÍCOLA (MEJORADO)
     # =========================
 
     st.markdown("---")
     st.subheader("🧠 Asesor agrícola")
 
     decision = st.radio(
-        "¿Ya seleccionaste un cultivo?",
+        "¿Ya seleccionaste un cultivo o necesitas ayuda para decidir?",
         ["❓ Necesito ayuda para decidir", "✅ Ya elegí un cultivo"],
         horizontal=True
     )
 
-    # 👉 AYUDA
     if decision == "❓ Necesito ayuda para decidir":
 
         if st.button("🧠 Ayúdame a decidir"):
@@ -212,43 +355,50 @@ if st.session_state.df_res is not None:
             top = df_res.head(3)
 
             prompt = f"""
-Municipio: {municipio}, {estado}
+Ubicación: {municipio}, {estado}
 
-Opciones:
+Clima actual:
+- Temp: {actual['temp']} °C
+- Lluvia: {actual['precip']} mm
+
+Clima histórico:
+- Temp promedio: {clima['temp_avg']} °C
+- Precipitación anual: {clima['precip_total']} mm
+
+Cultivos:
 {top[['cultivo','rendimiento','riesgo','score']].to_string()}
 
-Recomienda el mejor cultivo y explica por qué.
-Incluye riesgos y consejos prácticos.
+Recomienda el mejor cultivo, explica por qué,
+cuál es más rentable, cuál más seguro y da recomendaciones prácticas.
 """
 
-            st.write(preguntar_llm(prompt))
+            with st.spinner("🧠 Analizando opciones..."):
+                st.write(preguntar_llm(prompt))
 
-    # 👉 YA ELIGIÓ
     else:
 
-        cultivo_sel = st.selectbox("🌱 ¿Qué cultivo elegiste?", df_res["cultivo"])
+        cultivo_final = st.selectbox("🌱 ¿Qué cultivo elegiste?", df_res["cultivo"])
 
         if st.button("📘 Analizar cultivo"):
 
-            row = df_res[df_res["cultivo"] == cultivo_sel].iloc[0]
+            row = df_res[df_res["cultivo"] == cultivo_final].iloc[0]
 
             prompt = f"""
-Cultivo: {cultivo_sel}
-Municipio: {municipio}
+Cultivo: {cultivo_final}
+Ubicación: {municipio}, {estado}
 
-Temperatura: {actual['temp']}
-Precipitación: {actual['precip']}
+Condiciones actuales:
+Temp: {actual['temp']} °C
+Precipitación anual: {clima['precip_total']} mm
 
-Rendimiento estimado: {row['rendimiento']}
+Rendimiento: {row['rendimiento']}
 Riesgo: {row['riesgo']}
 
-Explica:
-- condiciones óptimas
-- comparación con condiciones actuales
-- plagas comunes
-- recomendaciones
+Explica condiciones óptimas, comparación con las actuales,
+plagas y recomendaciones prácticas.
 
 Termina preguntando si necesita más ayuda.
 """
 
-            st.write(preguntar_llm(prompt))
+            with st.spinner("🌱 Analizando cultivo..."):
+                st.write(preguntar_llm(prompt))
