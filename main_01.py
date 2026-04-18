@@ -272,7 +272,7 @@ if st.button("Analizar"):
 
         input_dict.update(suelo)
 
-        df_res, cluster = recomendar_cultivos(input_dict)
+        df_res, cluster = recomendar_cultivos(input_dict, municipio)
 
         # guardar
         st.session_state.df_res = df_res
