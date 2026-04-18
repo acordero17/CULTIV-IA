@@ -14,7 +14,7 @@ st.set_page_config(page_title="Cultiv-IA", layout="wide")
 api_key = st.secrets["OPENWEATHER_API_KEY"]
 
 # =========================
-# 🛡️ SESSION STATE ROBUSTO
+# 🛡️ SESSION STATE
 # =========================
 
 if "ubicacion_data" in st.session_state:
@@ -100,25 +100,21 @@ def obtener_suelo(municipio):
 @st.cache_data(ttl=1800)
 def obtener_forecast(lat, lon):
     url = "https://api.openweathermap.org/data/2.5/forecast"
+    params = {"lat": lat, "lon": lon, "appid": api_key, "units": "metric"}
 
-    params = {
-        "lat": lat,
-        "lon": lon,
-        "appid": api_key,
-        "units": "metric"
-    }
+    try:
+        data = requests.get(url, params=params, timeout=5).json()
+        temps = [i["main"]["temp"] for i in data["list"]]
+        lluvia = sum(i.get("rain", {}).get("3h", 0) for i in data["list"])
 
-    data = requests.get(url, params=params, timeout=5).json()
+        return {
+            "temp_avg": sum(temps)/len(temps),
+            "precip_total": lluvia
+        }
+    except:
+        return None
 
-    temps = [i["main"]["temp"] for i in data["list"]]
-    lluvia = sum(i.get("rain", {}).get("3h", 0) for i in data["list"])
-
-    return {
-        "temp_avg": sum(temps)/len(temps),
-        "precip_total": lluvia
-    }
-
-# 🌍 NASA climatología (ROBUSTA)
+# 🌍 NASA climatología (robusta + fallback interno)
 @st.cache_data(ttl=86400)
 def obtener_climatologia(lat, lon):
 
@@ -134,36 +130,36 @@ def obtener_climatologia(lat, lon):
         "format": "JSON"
     }
 
-    response = requests.get(url, params=params, timeout=15)
+    try:
+        response = requests.get(url, params=params, timeout=15)
 
-    if response.status_code != 200:
-        st.error("Error NASA POWER")
+        if response.status_code != 200:
+            return None
+
+        data = response.json()
+        p = data["properties"]["parameter"]
+
+        temps = [v for v in p.get("T2M", {}).values() if v != -999]
+
+        precip_key = None
+        for key in ["PRECTOTCORR", "PRECTOT", "PRECTOT_LAND"]:
+            if key in p:
+                precip_key = key
+                break
+
+        if precip_key is None:
+            return None
+
+        precip = [v for v in p[precip_key].values() if v != -999]
+
+        return {
+            "temp_avg": sum(temps)/len(temps),
+            "precip_total": sum(precip),
+            "precip_source": precip_key
+        }
+
+    except:
         return None
-
-    data = response.json()
-    p = data["properties"]["parameter"]
-
-    # temperatura
-    temps = [v for v in p.get("T2M", {}).values() if v != -999]
-
-    # precipitación dinámica
-    precip_key = None
-    for key in ["PRECTOTCORR", "PRECTOT", "PRECTOT_LAND"]:
-        if key in p:
-            precip_key = key
-            break
-
-    if precip_key is None:
-        st.error("No se encontró precipitación en NASA")
-        return None
-
-    precip = [v for v in p[precip_key].values() if v != -999]
-
-    return {
-        "temp_avg": sum(temps)/len(temps),
-        "precip_total": sum(precip),
-        "precip_source": precip_key
-    }
 
 # 📍 geocoding
 @st.cache_data(ttl=3600)
@@ -230,12 +226,20 @@ if st.button("Analizar"):
     status.info("🌍 Clima histórico...")
     clima = obtener_climatologia(lat, lon)
 
+    # 🔥 FALLBACK AUTOMÁTICO
+    if clima is None:
+        st.warning("Usando clima actual (fallback)")
+        clima = {
+            "temp_avg": forecast["temp_avg"],
+            "precip_total": forecast["precip_total"] * 50,
+            "precip_source": "fallback"
+        }
+
     status.info("🌱 Suelo...")
     suelo = obtener_suelo(municipio)
 
     status.info("🧠 Modelo...")
 
-    # 🔥 mezcla inteligente
     temp_final = clima["temp_avg"] + (forecast["temp_avg"] - clima["temp_avg"]) * 0.3
 
     input_dict = {
@@ -261,8 +265,7 @@ if st.button("Analizar"):
         "municipio": municipio,
         "estado": estado,
         "forecast": forecast,
-        "clima": clima,
-        "input_dict": input_dict
+        "clima": clima
     }
 
 # =========================
@@ -273,41 +276,18 @@ if st.session_state.df_res is not None:
 
     data = st.session_state.ubicacion_data
 
-    if "clima" not in data:
-        st.session_state.clear()
-        st.rerun()
-
-    df_res = st.session_state.df_res
-
     st.success(f"{data['municipio']}, {data['estado']}")
 
-    # 📊 condiciones
-    st.subheader("📊 Condiciones")
-
     col1, col2, col3 = st.columns(3)
+
     col1.metric("🌍 Temp histórica", f"{data['clima']['temp_avg']:.1f} °C")
     col2.metric("🌦️ Temp actual", f"{data['forecast']['temp_avg']:.1f} °C")
     col3.metric("🌧️ Precipitación", f"{data['clima']['precip_total']:.0f} mm")
 
-    st.caption(f"Fuente precipitación: {data['clima']['precip_source']}")
+    st.caption(f"Fuente: {data['clima']['precip_source']}")
 
-    # 📈 resultados
-    top5 = df_res.head(5)
+    st.dataframe(st.session_state.df_res.head(5))
 
-    for i, (_, row) in enumerate(top5.iterrows(), 1):
-
-        st.markdown(f"""
-        <div class="card">
-            <h3>#{i} 🌱 {row['cultivo']}</h3>
-        </div>
-        """, unsafe_allow_html=True)
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("📈 Rendimiento (ton/ha)", f"{row['rendimiento']:.1f}")
-        c2.metric("⚠️ Riesgo", f"{row['riesgo']:.1f}")
-        c3.metric("🧠 Score", f"{row['score']:.1f}")
-
-    # 🔄 reset
     if st.button("🔄 Probar otra ubicación"):
         st.session_state.clear()
         st.rerun()
