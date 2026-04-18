@@ -300,7 +300,7 @@ if st.button("Analizar"):
         df_res, cluster = recomendar_cultivos(input_dict, municipio)
         # 🔥 ECONÓMICO
         df_costos = cargar_costos()
-        df_economico = construir_df_economico(df_res, df_costos)
+        df_economico = construir_df_economico(df_modelo, df_costos)
 
         st.session_state.df_economico = df_economico
 
