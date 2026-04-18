@@ -26,6 +26,9 @@ if "cluster" not in st.session_state:
 if "ubicacion_data" not in st.session_state:
     st.session_state.ubicacion_data = None
 
+if "input_dict" not in st.session_state:
+    st.session_state.input_dict = None
+
 # =========================
 # 🎨 ESTILOS
 # =========================
@@ -63,16 +66,13 @@ def limpiar_texto(texto):
     )
     return texto.strip()
 
-
 @st.cache_data
 def cargar_suelos():
     df = pd.read_csv("modelos/suelos.csv")
     df["municipio_clean"] = df["municipio"].apply(limpiar_texto)
     return df
 
-
 df_suelos = cargar_suelos()
-
 
 @st.cache_data
 def obtener_suelo(municipio):
@@ -114,7 +114,7 @@ def obtener_clima_actual(lat, lon):
         "precip": data.get("rain", {}).get("1h", 0)
     }
 
-# 🌍 CLIMATOLOGÍA NASA
+# 🌍 NASA
 @st.cache_data(ttl=86400)
 def obtener_climatologia(lat, lon):
 
@@ -158,7 +158,6 @@ def obtener_climatologia(lat, lon):
     except:
         return None
 
-
 @st.cache_data(ttl=3600)
 def obtener_datos_ubicacion(ubicacion):
     url = "https://nominatim.openstreetmap.org/search"
@@ -175,13 +174,11 @@ def obtener_datos_ubicacion(ubicacion):
 
     return data[0] if data else None
 
-
 def extraer_municipio(data):
     addr = data["address"]
     municipio = addr.get("city") or addr.get("town") or addr.get("county")
     estado = addr.get("state")
     return municipio, estado
-
 
 # =========================
 # HEADER
@@ -223,7 +220,6 @@ if st.button("Analizar"):
         lat = float(data["lat"])
         lon = float(data["lon"])
 
-        # 🔥 NUEVO
         actual = obtener_clima_actual(lat, lon)
         clima = obtener_climatologia(lat, lon)
 
@@ -235,7 +231,6 @@ if st.button("Analizar"):
 
         suelo = obtener_suelo(municipio)
 
-        # 🔥 mezcla
         temp_final = clima["temp_avg"] + (actual["temp"] - clima["temp_avg"]) * 0.3
 
         precip_total = clima["precip_total"]
@@ -256,9 +251,11 @@ if st.button("Analizar"):
 
         df_res, cluster = recomendar_cultivos(input_dict)
 
+        # guardar
         st.session_state.df_res = df_res
         st.session_state.cluster = cluster
         st.session_state.ubicacion_data = (municipio, estado, actual, clima)
+        st.session_state.input_dict = input_dict  # 🔥 clave para what-if
 
 # =========================
 # RESULTADOS
@@ -284,7 +281,7 @@ if st.session_state.df_res is not None:
     c1.metric("🌡️ Temp promedio", f"{clima['temp_avg']:.1f} °C")
     c2.metric("🌧️ Precipitación anual", f"{clima['precip_total']:.0f} mm")
 
-    # 🌍 cluster (TU mapping intacto)
+    # 🌍 CLUSTER
     cluster_map = {
         0: "Zona agrícola de alto potencial",
         1: "Zona productiva tecnificada",
@@ -295,6 +292,9 @@ if st.session_state.df_res is not None:
 
     st.subheader("🌍 Tipo de municipio")
     st.success(cluster_map.get(cluster, cluster))
+
+    # 🧠 score explicación
+    st.info("🧠 Score = rendimiento esperado - riesgo (penaliza incertidumbre)")
 
     # 🎛️ selector
     modo = st.radio(
@@ -324,8 +324,42 @@ if st.session_state.df_res is not None:
 
         col1, col2, col3 = st.columns(3)
 
-        col1.metric("📈 Rendimiento", f"{row['rendimiento']:.1f}")
+        col1.metric("📈 Rendimiento (ton/ha)", f"{row['rendimiento']:.1f}")
         col2.metric("⚠️ Riesgo", f"{riesgo:.1f}")
         col3.metric("🧠 Score", f"{row['score']:.1f}")
 
         st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
+
+    # 🔬 WHAT-IF
+    st.subheader("🔬 What-if (simulación rápida)")
+
+    cultivo_sel = st.selectbox("Selecciona cultivo", df_res["cultivo"])
+
+    temp_delta = st.slider("🌡️ Cambio temperatura (°C)", -5.0, 5.0, 0.0)
+    precip_delta = st.slider("🌧️ Cambio precipitación (%)", -50, 50, 0)
+
+    if st.button("Simular escenario"):
+
+        input_mod = st.session_state.input_dict.copy()
+
+        input_mod["temp_avg"] += temp_delta
+        input_mod["temp_max"] += temp_delta
+        input_mod["temp_min"] += temp_delta
+        input_mod["precip_total"] *= (1 + precip_delta / 100)
+
+        df_new, _ = recomendar_cultivos(input_mod)
+
+        row_new = df_new[df_new["cultivo"] == cultivo_sel].iloc[0]
+
+        st.markdown("### 📊 Resultado simulado")
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("📈 Rendimiento (ton/ha)", f"{row_new['rendimiento']:.1f}")
+        c2.metric("⚠️ Riesgo", f"{row_new['riesgo']:.1f}")
+        c3.metric("🧠 Score", f"{row_new['score']:.1f}")
+
+    # 🔄 RESET
+    st.markdown("---")
+    if st.button("🔄 ¿Quieres analizar otro municipio?"):
+        st.session_state.clear()
+        st.rerun()
