@@ -80,6 +80,9 @@ def clasificar_rendimiento(r):
 
 def recomendar_cultivos(input_base, top_n=None):
 
+    import numpy as np
+    import random
+
     resultados = []
 
     cluster = obtener_cluster(input_base)
@@ -92,14 +95,25 @@ def recomendar_cultivos(input_base, top_n=None):
 
             df = preparar_input_modelo(input_dict)
 
-            preds = [tree.predict(df)[0] for tree in model_reg.estimators_]
+            # 🔥 BOOTSTRAPPING DE ÁRBOLES
+            preds = []
 
+            for _ in range(100):  # número de simulaciones
+                sampled_trees = random.choices(model_reg.estimators_, k=15)
+
+                pred = np.mean([tree.predict(df)[0] for tree in sampled_trees])
+                preds.append(pred)
+
+            # 📊 métricas
             mean = float(np.mean(preds))
-            low = float(np.percentile(preds, 10))
-            high = float(np.percentile(preds, 90))
+            std = float(np.std(preds))
 
-            riesgo = high - low
-            score = mean - riesgo
+            # 🔒 intervalo más realista
+            low = max(0, mean - std)
+            high = mean + std
+
+            riesgo = std  # más interpretable
+            score = mean - std  # balance simple y estable
 
             clase = clasificar_rendimiento(mean)
             tipo = obtener_tipo_cultivo(cultivo)
@@ -129,7 +143,7 @@ def recomendar_cultivos(input_base, top_n=None):
     for col in cols:
         df_res[col] = pd.to_numeric(df_res[col], errors="coerce")
 
-    # orden base por score (default)
+    # orden base por score
     df_res = df_res.sort_values(by="score", ascending=False)
 
     return df_res, cluster
