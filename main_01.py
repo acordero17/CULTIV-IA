@@ -64,6 +64,25 @@ def obtener_suelo(municipio):
         "suelo_limitado": 10,
     }
 
+# 🔥 CACHE APIs
+@st.cache_data(ttl=3600)
+def obtener_datos_ubicacion(ubicacion):
+    url = "https://nominatim.openstreetmap.org/search"
+
+    params = {
+        "q": ubicacion,
+        "format": "json",
+        "addressdetails": 1
+    }
+
+    headers = {"User-Agent": "cultiv-ia"}
+
+    data = requests.get(url, params=params, headers=headers).json()
+
+    return data[0] if data else None
+
+
+@st.cache_data(ttl=600)
 def obtener_forecast(lat, lon):
     url = "https://api.openweathermap.org/data/2.5/forecast"
 
@@ -88,20 +107,6 @@ def obtener_forecast(lat, lon):
         "precip_total": lluvia_total,
     }
 
-def obtener_datos_ubicacion(ubicacion):
-    url = "https://nominatim.openstreetmap.org/search"
-
-    params = {
-        "q": ubicacion,
-        "format": "json",
-        "addressdetails": 1
-    }
-
-    headers = {"User-Agent": "cultiv-ia"}
-
-    data = requests.get(url, params=params, headers=headers).json()
-
-    return data[0] if data else None
 
 def extraer_municipio(data):
     addr = data["address"]
@@ -120,7 +125,7 @@ ubicacion = st.text_input("📍 Ubicación", "Texcoco, México")
 
 if st.button("Analizar"):
     st.session_state.analizado = True
-    st.session_state.df_res = None  # 🔥 fuerza recalculo
+    st.session_state.df_res = None
 
 # =========================
 # PROCESO PRINCIPAL
@@ -128,39 +133,43 @@ if st.button("Analizar"):
 
 if st.session_state.analizado and st.session_state.df_res is None:
 
-    with st.spinner("Analizando..."):
+    st.info("📍 Buscando ubicación...")
 
-        data = obtener_datos_ubicacion(ubicacion)
+    data = obtener_datos_ubicacion(ubicacion)
 
-        municipio, estado = extraer_municipio(data)
+    municipio, estado = extraer_municipio(data)
 
-        lat = float(data["lat"])
-        lon = float(data["lon"])
+    lat = float(data["lat"])
+    lon = float(data["lon"])
 
-        forecast = obtener_forecast(lat, lon)
-        suelo = obtener_suelo(municipio)
+    st.info("🌦️ Obteniendo clima...")
 
-        precip_total = forecast["precip_total"] * 50
-        precip_avg = precip_total / 365
+    forecast = obtener_forecast(lat, lon)
 
-        input_dict = {
-            "temp_avg": forecast["temp_avg"],
-            "temp_min": forecast["temp_avg"],
-            "temp_max": forecast["temp_avg"],
-            "precip_total": precip_total,
-            "precip_avg": precip_avg,
-            "nomestado": "MEXICO",
-            "nomcicloproductivo": "PV",
-            "nommodalidad": "RIEGO"
-        }
+    suelo = obtener_suelo(municipio)
 
-        input_dict.update(suelo)
+    precip_total = forecast["precip_total"] * 50
+    precip_avg = precip_total / 365
 
+    input_dict = {
+        "temp_avg": forecast["temp_avg"],
+        "temp_min": forecast["temp_avg"],
+        "temp_max": forecast["temp_avg"],
+        "precip_total": precip_total,
+        "precip_avg": precip_avg,
+        "nomestado": "MEXICO",
+        "nomcicloproductivo": "PV",
+        "nommodalidad": "RIEGO"
+    }
+
+    input_dict.update(suelo)
+
+    with st.spinner("🌱 Analizando cultivos..."):
         df_res, cluster = recomendar_cultivos_fast(input_dict)
 
-        st.session_state.df_res = df_res
-        st.session_state.input_base = input_dict
-        st.session_state.ubicacion_data = (municipio, estado, lat, lon)
+    st.session_state.df_res = df_res
+    st.session_state.input_base = input_dict
+    st.session_state.ubicacion_data = (municipio, estado, lat, lon)
 
 # =========================
 # RESULTADOS
@@ -173,7 +182,6 @@ if st.session_state.df_res is not None:
     input_dict = st.session_state.input_base
 
     st.success(f"{municipio}, {estado}")
-    st.map(pd.DataFrame({"lat": [lat], "lon": [lon]}))
 
     df_res = df_res.sort_values(by="rendimiento", ascending=False)
     top5 = df_res.head(5)
@@ -204,7 +212,7 @@ if st.session_state.df_res is not None:
         input_sim["temp_max"] += delta_temp
         input_sim["precip_total"] *= (1 + delta_precip / 100)
 
-        resultado = predecir_con_incertidumbre(input_sim, cultivo_sel)
+        with st.spinner("Calculando incertidumbre..."):
+            resultado = predecir_con_incertidumbre(input_sim, cultivo_sel)
 
-        st.write("Resultado:")
         st.write(resultado)
