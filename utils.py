@@ -192,16 +192,92 @@ def obtener_cultivos_municipio(municipio):
 
     return cults
 
-def cargar_costos(path="modelos/costos.csv"):
-    return pd.read_csv(path)
 import pandas as pd
 
+# -------------------------
+# 📄 cargar costos
+# -------------------------
+def cargar_costos(path="modelos/costos.csv"):
+    df = pd.read_csv(path)
+    df = df.rename(columns={"cultivo": "nomcultivo"})
+    df["nomcultivo"] = df["nomcultivo"].str.lower().str.strip()
+    return df
+
+
+# -------------------------
+# 💰 precios
+# -------------------------
 def obtener_precios_actuales(df):
+    df = df.copy()
+    df["nomcultivo"] = df["nomcultivo"].str.lower().str.strip()
+
     precios = (
         df.sort_values("anio")
         .groupby("nomcultivo")
         .tail(1)[["nomcultivo","preciomediorural"]]
         .rename(columns={"preciomediorural": "precio"})
-        .reset_index(drop=True)
     )
+
     return precios
+
+
+# -------------------------
+# 🔗 unir costos + precios
+# -------------------------
+def construir_df_economico(df_modelo, df_costos):
+    df_precios = obtener_precios_actuales(df_modelo)
+
+    df = df_costos.merge(
+        df_precios,
+        on="nomcultivo",
+        how="left"
+    )
+
+    return df
+
+
+# -------------------------
+# 🔎 obtener info cultivo
+# -------------------------
+def get_info_cultivo(df, cultivo):
+    row = df[df["nomcultivo"] == cultivo]
+
+    if row.empty:
+        return None, None
+
+    return row["costo_promedio"].values[0], row["precio"].values[0]
+
+
+# -------------------------
+# 📊 cálculo económico
+# -------------------------
+def calcular_resultados(rendimiento, precio, costo, hectareas):
+    ingreso = rendimiento * precio * hectareas
+    costo_total = costo * hectareas
+    ganancia = ingreso - costo_total
+
+    return ingreso, costo_total, ganancia
+def construir_input_usuario(df_base, cultivo, municipio):
+    
+    df = df_base.copy()
+
+    df["nomcultivo"] = df["nomcultivo"].str.lower().str.strip()
+    df["nommunicipio"] = df["nommunicipio"].str.lower().str.strip()
+
+    cultivo = cultivo.lower().strip()
+    municipio = municipio.lower().strip()
+
+    filtro = (
+        (df["nomcultivo"] == cultivo) &
+        (df["nommunicipio"] == municipio)
+    )
+
+    df_filtrado = df[filtro]
+
+    if df_filtrado.empty:
+        return None
+
+    # 👉 usar el último año disponible
+    row = df_filtrado.sort_values("anio").tail(1)
+
+    return row
