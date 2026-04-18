@@ -5,21 +5,13 @@ import unicodedata
 
 from utils import recomendar_cultivos
 
-# =========================
-# CONFIG
-# =========================
-
 st.set_page_config(page_title="Cultiv-IA", layout="wide")
 
 api_key = st.secrets["OPENWEATHER_API_KEY"]
 
 # =========================
-# 🛡️ SESSION STATE
+# SESSION STATE
 # =========================
-
-if "ubicacion_data" in st.session_state:
-    if not isinstance(st.session_state.ubicacion_data, dict):
-        st.session_state.clear()
 
 if "df_res" not in st.session_state:
     st.session_state.df_res = None
@@ -31,7 +23,7 @@ if "ubicacion_data" not in st.session_state:
     st.session_state.ubicacion_data = None
 
 # =========================
-# 🎨 ESTILOS
+# 🎨 ESTILOS (TU UI ORIGINAL)
 # =========================
 
 st.markdown("""
@@ -67,13 +59,16 @@ def limpiar_texto(texto):
     )
     return texto.strip()
 
+
 @st.cache_data
 def cargar_suelos():
     df = pd.read_csv("modelos/suelos.csv")
     df["municipio_clean"] = df["municipio"].apply(limpiar_texto)
     return df
 
+
 df_suelos = cargar_suelos()
+
 
 @st.cache_data
 def obtener_suelo(municipio):
@@ -96,32 +91,38 @@ def obtener_suelo(municipio):
         "suelo_limitado": 10,
     }
 
-# 🌦️ clima actual
+
+# 🌦️ CLIMA ACTUAL
 @st.cache_data(ttl=1800)
 def obtener_forecast(lat, lon):
     url = "https://api.openweathermap.org/data/2.5/forecast"
-    params = {"lat": lat, "lon": lon, "appid": api_key, "units": "metric"}
 
-    try:
-        data = requests.get(url, params=params, timeout=5).json()
-        temps = [i["main"]["temp"] for i in data["list"]]
-        lluvia = sum(i.get("rain", {}).get("3h", 0) for i in data["list"])
+    params = {
+        "lat": lat,
+        "lon": lon,
+        "appid": api_key,
+        "units": "metric"
+    }
 
-        return {
-            "temp_avg": sum(temps)/len(temps),
-            "precip_total": lluvia
-        }
-    except:
-        return None
+    data = requests.get(url, params=params, timeout=5).json()
 
-# 🌍 NASA climatología (robusta + fallback interno)
+    temps = [i["main"]["temp"] for i in data["list"]]
+    lluvia = sum(i.get("rain", {}).get("3h", 0) for i in data["list"])
+
+    return {
+        "temp_avg": sum(temps)/len(temps),
+        "precip_total": lluvia
+    }
+
+
+# 🌍 NASA (ARREGLADO)
 @st.cache_data(ttl=86400)
 def obtener_climatologia(lat, lon):
 
     url = "https://power.larc.nasa.gov/api/temporal/daily/point"
 
     params = {
-        "parameters": "T2M,PRECTOTCORR,PRECTOT,PRECTOT_LAND",
+        "parameters": "T2M,PRECTOTCORR",
         "community": "AG",
         "longitude": lon,
         "latitude": lat,
@@ -130,38 +131,39 @@ def obtener_climatologia(lat, lon):
         "format": "JSON"
     }
 
-    try:
-        response = requests.get(url, params=params, timeout=15)
+    response = requests.get(url, params=params, timeout=15)
 
-        if response.status_code != 200:
-            return None
-
-        data = response.json()
-        p = data["properties"]["parameter"]
-
-        temps = [v for v in p.get("T2M", {}).values() if v != -999]
-
-        precip_key = None
-        for key in ["PRECTOTCORR", "PRECTOT", "PRECTOT_LAND"]:
-            if key in p:
-                precip_key = key
-                break
-
-        if precip_key is None:
-            return None
-
-        precip = [v for v in p[precip_key].values() if v != -999]
-
-        return {
-            "temp_avg": sum(temps)/len(temps),
-            "precip_total": sum(precip),
-            "precip_source": precip_key
-        }
-
-    except:
+    if response.status_code != 200:
         return None
 
-# 📍 geocoding
+    data = response.json()
+
+    if "properties" not in data:
+        return None
+
+    p = data["properties"].get("parameter", {})
+
+    if "T2M" not in p:
+        return None
+
+    temps = [v for v in p["T2M"].values() if v != -999]
+
+    precip = None
+    for key in ["PRECTOTCORR", "PRECTOT", "PRECTOT_LAND"]:
+        if key in p:
+            precip = [v for v in p[key].values() if v != -999]
+            break
+
+    if precip is None:
+        return None
+
+    return {
+        "temp_avg": sum(temps) / len(temps),
+        "precip_total": sum(precip),
+    }
+
+
+# 📍 GEOCODING
 @st.cache_data(ttl=3600)
 def obtener_datos_ubicacion(ubicacion):
     url = "https://api.opencagedata.com/geocode/v1/json"
@@ -186,18 +188,30 @@ def obtener_datos_ubicacion(ubicacion):
         "components": r["components"]
     }
 
+
 def extraer_municipio(data):
     comp = data["components"]
     municipio = comp.get("city") or comp.get("town") or comp.get("county")
     estado = comp.get("state")
     return municipio, estado
 
+
 # =========================
-# UI
+# UI HEADER
 # =========================
 
-st.title("🌱 Cultiv-IA")
-st.caption("Ejemplo: Texcoco, Estado de México")
+col1, col2 = st.columns([1, 5])
+
+with col1:
+    st.image("https://cdn-icons-png.flaticon.com/512/2909/2909762.png", width=80)
+
+with col2:
+    st.title("🌱 Cultiv-IA")
+    st.caption("Recomendaciones inteligentes para el campo")
+
+# =========================
+# INPUT
+# =========================
 
 ubicacion = st.text_input("📍 Ubicación", "Texcoco, México")
 
@@ -209,7 +223,7 @@ if st.button("Analizar"):
 
     status = st.empty()
 
-    status.info("📍 Buscando ubicación...")
+    status.info("📍 Buscando coordenadas...")
     data = obtener_datos_ubicacion(ubicacion)
 
     if data is None:
@@ -218,27 +232,27 @@ if st.button("Analizar"):
 
     municipio, estado = extraer_municipio(data)
 
-    lat, lon = data["lat"], data["lon"]
+    lat = data["lat"]
+    lon = data["lon"]
 
-    status.info("🌦️ Clima actual...")
+    status.info("🌦️ Obteniendo clima actual...")
     forecast = obtener_forecast(lat, lon)
 
-    status.info("🌍 Clima histórico...")
+    status.info("🌍 Obteniendo clima histórico...")
     clima = obtener_climatologia(lat, lon)
 
-    # 🔥 FALLBACK AUTOMÁTICO
+    # 🔥 fallback SOLO si falla de verdad
     if clima is None:
-        st.warning("Usando clima actual (fallback)")
+        st.warning("No se pudo obtener histórico, usando clima actual")
         clima = {
             "temp_avg": forecast["temp_avg"],
-            "precip_total": forecast["precip_total"] * 50,
-            "precip_source": "fallback"
+            "precip_total": forecast["precip_total"] * 50
         }
 
-    status.info("🌱 Suelo...")
+    status.info("🌱 Analizando suelo...")
     suelo = obtener_suelo(municipio)
 
-    status.info("🧠 Modelo...")
+    status.info("🧠 Ejecutando modelo...")
 
     temp_final = clima["temp_avg"] + (forecast["temp_avg"] - clima["temp_avg"]) * 0.3
 
@@ -247,7 +261,7 @@ if st.button("Analizar"):
         "temp_max": temp_final,
         "temp_min": temp_final,
         "precip_total": clima["precip_total"],
-        "precip_avg": clima["precip_total"]/365,
+        "precip_avg": clima["precip_total"] / 365,
         "nomestado": "MEXICO",
         "nomcicloproductivo": "PV",
         "nommodalidad": "RIEGO"
@@ -265,28 +279,49 @@ if st.button("Analizar"):
         "municipio": municipio,
         "estado": estado,
         "forecast": forecast,
-        "clima": clima
+        "clima": clima,
+        "input_dict": input_dict
     }
 
 # =========================
-# RESULTADOS
+# RESULTADOS (TU UI)
 # =========================
 
 if st.session_state.df_res is not None:
 
     data = st.session_state.ubicacion_data
+    df_res = st.session_state.df_res
+    cluster = st.session_state.cluster
 
     st.success(f"{data['municipio']}, {data['estado']}")
 
-    col1, col2, col3 = st.columns(3)
+    st.subheader("📊 Condiciones actuales")
 
-    col1.metric("🌍 Temp histórica", f"{data['clima']['temp_avg']:.1f} °C")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("🌡️ Temp histórica", f"{data['clima']['temp_avg']:.1f} °C")
     col2.metric("🌦️ Temp actual", f"{data['forecast']['temp_avg']:.1f} °C")
     col3.metric("🌧️ Precipitación", f"{data['clima']['precip_total']:.0f} mm")
 
-    st.caption(f"Fuente: {data['clima']['precip_source']}")
+    st.info("🧠 Score = rendimiento esperado - riesgo")
 
-    st.dataframe(st.session_state.df_res.head(5))
+    top5 = df_res.head(5)
+
+    for i, (_, row) in enumerate(top5.iterrows(), 1):
+
+        st.markdown(f"""
+        <div class="card">
+            <h3>#{i} 🌱 {row['cultivo']}</h3>
+            <p><b>Tipo:</b> {row['tipo_cultivo']} | <b>Clasificación:</b> {row['clasificacion']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric("📈 Rendimiento (ton/ha)", f"{row['rendimiento']:.1f}")
+        col2.metric("⚠️ Riesgo", f"{row['riesgo']:.1f}")
+        col3.metric("🧠 Score", f"{row['score']:.1f}")
+
+        st.caption(f"Rango (ton/ha): {row['low']:.1f} – {row['high']:.1f}")
 
     if st.button("🔄 Probar otra ubicación"):
         st.session_state.clear()
