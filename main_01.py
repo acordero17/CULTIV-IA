@@ -4,21 +4,72 @@ import pandas as pd
 import unicodedata
 
 from utils import recomendar_cultivos
-import os
-from dotenv import load_dotenv
+
+# =========================
+# 🎨 ESTILOS
+# =========================
+
+st.set_page_config(page_title="Cultiv-IA", layout="wide")
+
+st.markdown("""
+<style>
+.stApp {
+    background: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)),
+    url("https://images.unsplash.com/photo-1500382017468-9049fed747ef");
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+}
+
+.block-container {
+    background: rgba(0, 0, 0, 0.5);
+    padding: 2rem;
+    border-radius: 16px;
+}
+
+h1, h2, h3 {
+    color: #E8F5E9;
+}
+
+.stButton>button {
+    background-color: #4CAF50;
+    color: white;
+    border-radius: 10px;
+    font-weight: bold;
+}
+
+.card {
+    background: rgba(255,255,255,0.08);
+    padding: 15px;
+    border-radius: 12px;
+    margin-bottom: 15px;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # =========================
 # CONFIG
 # =========================
 
-# Obtener API key desde Streamlit Secrets
 api_key = st.secrets["OPENWEATHER_API_KEY"]
 
-# 🔥 carga tu dataset real
 df_suelos = pd.read_csv("modelos/suelos.csv")
 
 # =========================
-# 🔧 LIMPIEZA TEXTO
+# HEADER
+# =========================
+
+col1, col2 = st.columns([1, 5])
+
+with col1:
+    st.image("https://cdn-icons-png.flaticon.com/512/2909/2909762.png", width=80)
+
+with col2:
+    st.title("🌱 Cultiv-IA")
+    st.caption("Recomendaciones inteligentes para el campo")
+
+# =========================
+# FUNCIONES
 # =========================
 
 def limpiar_texto(texto):
@@ -31,29 +82,19 @@ def limpiar_texto(texto):
 
 df_suelos["municipio_clean"] = df_suelos["municipio"].apply(limpiar_texto)
 
-# =========================
-# 🌱 SUELO
-# =========================
-
 def obtener_suelo(municipio):
-
     m = limpiar_texto(municipio)
-
-    row = df_suelos[
-        df_suelos["municipio_clean"].str.contains(m, na=False)
-    ]
+    row = df_suelos[df_suelos["municipio_clean"].str.contains(m, na=False)]
 
     if len(row) > 0:
         row = row.iloc[0]
-
         return {
             "suelo_arcilloso": row["suelo_arcilloso"],
             "suelo_arenoso": row["suelo_arenoso"],
             "suelo_fertil": row["suelo_fertil"],
-            "suelo_limitado" : row["suelo_limitado"],
+            "suelo_limitado": row["suelo_limitado"],
         }
 
-    # fallback
     return {
         "suelo_arcilloso": 30,
         "suelo_arenoso": 30,
@@ -61,12 +102,7 @@ def obtener_suelo(municipio):
         "suelo_limitado": 10,
     }
 
-# =========================
-# 🌦️ FORECAST
-# =========================
-
 def obtener_forecast(lat, lon):
-
     url = "https://api.openweathermap.org/data/2.5/forecast"
 
     params = {
@@ -78,25 +114,17 @@ def obtener_forecast(lat, lon):
 
     data = requests.get(url, params=params).json()
 
-    temps, temps_min, temps_max = [], [], []
+    temps = []
     lluvia_total = 0
 
     for item in data["list"]:
         temps.append(item["main"]["temp"])
-        temps_min.append(item["main"]["temp_min"])
-        temps_max.append(item["main"]["temp_max"])
         lluvia_total += item.get("rain", {}).get("3h", 0)
 
     return {
         "temp_avg": sum(temps)/len(temps),
-        "temp_min_avg": sum(temps_min)/len(temps_min),
-        "temp_max_avg": sum(temps_max)/len(temps_max),
         "precip_total": lluvia_total,
     }
-
-# =========================
-# 🌍 GEO
-# =========================
 
 def obtener_datos_ubicacion(ubicacion):
     url = "https://nominatim.openstreetmap.org/search"
@@ -113,7 +141,6 @@ def obtener_datos_ubicacion(ubicacion):
 
     return data[0] if data else None
 
-
 def extraer_municipio(data):
     addr = data["address"]
     municipio = addr.get("city") or addr.get("town") or addr.get("county")
@@ -121,12 +148,15 @@ def extraer_municipio(data):
     return municipio, estado
 
 # =========================
-# UI
+# INPUT
 # =========================
 
-st.title("🌱 Cultiv-IA")
+st.markdown("### 📍 Ingresa tu ubicación")
+ubicacion = st.text_input("", "Texcoco, México")
 
-ubicacion = st.text_input("📍 Ubicación", "Texcoco, México")
+# =========================
+# MAIN FLOW
+# =========================
 
 if st.button("Analizar"):
 
@@ -139,23 +169,20 @@ if st.button("Analizar"):
 
     st.success(f"{municipio}, {estado}")
 
+    # 🗺️ MAPA
+    st.map(pd.DataFrame({"lat": [lat], "lon": [lon]}))
+
     forecast = obtener_forecast(lat, lon)
 
-    # 🔥 ajustar precipitación
     precip_total = forecast["precip_total"] * 50
     precip_avg = precip_total / 365
 
-    # 🔥 suelo real
     suelo = obtener_suelo(municipio)
-
-    # =========================
-    # 🤖 INPUT
-    # =========================
 
     input_dict = {
         "temp_avg": forecast["temp_avg"],
-        "temp_max": forecast["temp_max_avg"],
-        "temp_min": forecast["temp_min_avg"],
+        "temp_max": forecast["temp_avg"],
+        "temp_min": forecast["temp_avg"],
         "precip_total": precip_total,
         "precip_avg": precip_avg,
         "nomestado": "MEXICO",
@@ -165,28 +192,46 @@ if st.button("Analizar"):
 
     input_dict.update(suelo)
 
-    top5, cluster = recomendar_cultivos(input_dict, 5)
+    df_res, cluster = recomendar_cultivos(input_dict)
 
     # =========================
-    # RESULTADOS
+    # SELECTOR
     # =========================
 
-    cluster_map = {
-        0: "Zona agrícola de alto potencial",
-        1: "Zona productiva tecnificada",
-        2: "Zona de bajo rendimiento por suelo",
-        3: "Zona con suelo arcilloso",
-        4: "Zona húmeda de bajo rendimiento"
-    }
+    modo = st.radio(
+        "¿Qué prefieres?",
+        ["🌾 Mayor rendimiento", "🧠 Mayor estabilidad"],
+        horizontal=True
+    )
 
-    st.subheader("🌍 Tipo de municipio")
-    st.success(cluster_map.get(cluster, cluster))
+    if modo == "🌾 Mayor rendimiento":
+        df_res = df_res.sort_values(by="rendimiento", ascending=False)
+        st.subheader("Top por rendimiento")
+    else:
+        df_res = df_res.sort_values(by="score", ascending=False)
+        st.subheader("Top balanceado")
 
-    st.subheader("🌾 Top cultivos")
+    top5 = df_res.head(5)
 
-    for _, row in top5.iterrows():
-        st.write(f"🌱 {row['cultivo']}")
-        st.write(f"Tipo: {row['tipo_cultivo']}")
-        st.write(f"Rendimiento: {row['rendimiento']:.2f}")
-        st.write(f"Clasificación: {row['clasificacion']}")
-        st.write("---")
+    # =========================
+    # CARDS
+    # =========================
+
+    for i, (_, row) in enumerate(top5.iterrows(), 1):
+
+        riesgo = row["high"] - row["low"]
+
+        st.markdown(f"""
+        <div class="card">
+            <h3>#{i} 🌱 {row['cultivo']}</h3>
+            <p><b>Tipo:</b> {row['tipo_cultivo']} | <b>Clasificación:</b> {row['clasificacion']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric("📈 Rendimiento", f"{row['rendimiento']:.1f}")
+        col2.metric("⚠️ Riesgo", f"{riesgo:.1f}")
+        col3.metric("🧠 Score", f"{row['score']:.1f}")
+
+        st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
