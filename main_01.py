@@ -6,10 +6,30 @@ import unicodedata
 from utils import recomendar_cultivos
 
 # =========================
-# 🎨 ESTILOS
+# CONFIG
 # =========================
 
 st.set_page_config(page_title="Cultiv-IA", layout="wide")
+
+api_key = st.secrets["OPENWEATHER_API_KEY"]
+df_suelos = pd.read_csv("modelos/suelos.csv")
+
+# =========================
+# SESSION STATE
+# =========================
+
+if "df_res" not in st.session_state:
+    st.session_state.df_res = None
+
+if "cluster" not in st.session_state:
+    st.session_state.cluster = None
+
+if "ubicacion_data" not in st.session_state:
+    st.session_state.ubicacion_data = None
+
+# =========================
+# 🎨 ESTILOS
+# =========================
 
 st.markdown("""
 <style>
@@ -17,27 +37,12 @@ st.markdown("""
     background: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)),
     url("https://images.unsplash.com/photo-1500382017468-9049fed747ef");
     background-size: cover;
-    background-position: center;
-    background-attachment: fixed;
 }
-
 .block-container {
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0,0,0,0.5);
     padding: 2rem;
     border-radius: 16px;
 }
-
-h1, h2, h3 {
-    color: #E8F5E9;
-}
-
-.stButton>button {
-    background-color: #4CAF50;
-    color: white;
-    border-radius: 10px;
-    font-weight: bold;
-}
-
 .card {
     background: rgba(255,255,255,0.08);
     padding: 15px;
@@ -46,27 +51,6 @@ h1, h2, h3 {
 }
 </style>
 """, unsafe_allow_html=True)
-
-# =========================
-# CONFIG
-# =========================
-
-api_key = st.secrets["OPENWEATHER_API_KEY"]
-
-df_suelos = pd.read_csv("modelos/suelos.csv")
-
-# =========================
-# HEADER
-# =========================
-
-col1, col2 = st.columns([1, 5])
-
-with col1:
-    st.image("https://cdn-icons-png.flaticon.com/512/2909/2909762.png", width=80)
-
-with col2:
-    st.title("🌱 Cultiv-IA")
-    st.caption("Recomendaciones inteligentes para el campo")
 
 # =========================
 # FUNCIONES
@@ -148,56 +132,93 @@ def extraer_municipio(data):
     return municipio, estado
 
 # =========================
+# HEADER
+# =========================
+
+col1, col2 = st.columns([1, 5])
+
+with col1:
+    st.image("https://cdn-icons-png.flaticon.com/512/2909/2909762.png", width=80)
+
+with col2:
+    st.title("🌱 Cultiv-IA")
+    st.caption("Recomendaciones inteligentes para el campo")
+
+# =========================
 # INPUT
 # =========================
 
-st.markdown("### 📍 Ingresa tu ubicación")
-ubicacion = st.text_input("", "Texcoco, México")
+ubicacion = st.text_input("📍 Ubicación", "Texcoco, México")
 
 # =========================
-# MAIN FLOW
+# BOTÓN
 # =========================
 
 if st.button("Analizar"):
 
-    data = obtener_datos_ubicacion(ubicacion)
+    with st.spinner("🌱 Analizando condiciones..."):
 
-    municipio, estado = extraer_municipio(data)
+        data = obtener_datos_ubicacion(ubicacion)
 
-    lat = float(data["lat"])
-    lon = float(data["lon"])
+        municipio, estado = extraer_municipio(data)
+
+        lat = float(data["lat"])
+        lon = float(data["lon"])
+
+        forecast = obtener_forecast(lat, lon)
+        suelo = obtener_suelo(municipio)
+
+        precip_total = forecast["precip_total"] * 50
+        precip_avg = precip_total / 365
+
+        input_dict = {
+            "temp_avg": forecast["temp_avg"],
+            "temp_max": forecast["temp_avg"],
+            "temp_min": forecast["temp_avg"],
+            "precip_total": precip_total,
+            "precip_avg": precip_avg,
+            "nomestado": "MEXICO",
+            "nomcicloproductivo": "PV",
+            "nommodalidad": "RIEGO"
+        }
+
+        input_dict.update(suelo)
+
+        df_res, cluster = recomendar_cultivos(input_dict)
+
+        # 🔥 guardar estado
+        st.session_state.df_res = df_res
+        st.session_state.cluster = cluster
+        st.session_state.ubicacion_data = (municipio, estado, lat, lon)
+
+# =========================
+# RESULTADOS PERSISTENTES
+# =========================
+
+if st.session_state.df_res is not None:
+
+    df_res = st.session_state.df_res
+    cluster = st.session_state.cluster
+    municipio, estado, lat, lon = st.session_state.ubicacion_data
 
     st.success(f"{municipio}, {estado}")
 
-    # 🗺️ MAPA
+    # 🗺️ mapa
     st.map(pd.DataFrame({"lat": [lat], "lon": [lon]}))
 
-    forecast = obtener_forecast(lat, lon)
-
-    precip_total = forecast["precip_total"] * 50
-    precip_avg = precip_total / 365
-
-    suelo = obtener_suelo(municipio)
-
-    input_dict = {
-        "temp_avg": forecast["temp_avg"],
-        "temp_max": forecast["temp_avg"],
-        "temp_min": forecast["temp_avg"],
-        "precip_total": precip_total,
-        "precip_avg": precip_avg,
-        "nomestado": "MEXICO",
-        "nomcicloproductivo": "PV",
-        "nommodalidad": "RIEGO"
+    # 🌍 cluster
+    cluster_map = {
+        0: "Zona agrícola de alto potencial",
+        1: "Zona productiva tecnificada",
+        2: "Zona de bajo rendimiento por suelo",
+        3: "Zona con suelo arcilloso",
+        4: "Zona húmeda de bajo rendimiento"
     }
 
-    input_dict.update(suelo)
+    st.subheader("🌍 Tipo de municipio")
+    st.success(cluster_map.get(cluster, cluster))
 
-    df_res, cluster = recomendar_cultivos(input_dict)
-
-    # =========================
-    # SELECTOR
-    # =========================
-
+    # 🎛️ selector
     modo = st.radio(
         "¿Qué prefieres?",
         ["🌾 Mayor rendimiento", "🧠 Mayor estabilidad"],
@@ -206,17 +227,12 @@ if st.button("Analizar"):
 
     if modo == "🌾 Mayor rendimiento":
         df_res = df_res.sort_values(by="rendimiento", ascending=False)
-        st.subheader("Top por rendimiento")
     else:
         df_res = df_res.sort_values(by="score", ascending=False)
-        st.subheader("Top balanceado")
 
     top5 = df_res.head(5)
 
-    # =========================
-    # CARDS
-    # =========================
-
+    # 🧱 CARDS
     for i, (_, row) in enumerate(top5.iterrows(), 1):
 
         riesgo = row["high"] - row["low"]
@@ -231,6 +247,10 @@ if st.button("Analizar"):
         col1, col2, col3 = st.columns(3)
 
         col1.metric("📈 Rendimiento", f"{row['rendimiento']:.1f}")
+        col2.metric("⚠️ Riesgo", f"{riesgo:.1f}")
+        col3.metric("🧠 Score", f"{row['score']:.1f}")
+
+        st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
         col2.metric("⚠️ Riesgo", f"{riesgo:.1f}")
         col3.metric("🧠 Score", f"{row['score']:.1f}")
 
