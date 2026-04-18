@@ -88,9 +88,34 @@ def obtener_forecast(lat, lon):
 
 def obtener_datos_ubicacion(ubicacion):
     url = "https://nominatim.openstreetmap.org/search"
-    params = {"q": ubicacion, "format": "json", "addressdetails": 1}
-    data = requests.get(url, params=params).json()
-    return data[0] if data else None
+
+    params = {
+        "q": ubicacion,
+        "format": "json",
+        "addressdetails": 1
+    }
+
+    headers = {
+        "User-Agent": "cultiv-ia"
+    }
+
+    try:
+        res = requests.get(url, params=params, headers=headers, timeout=10)
+
+        # 🔴 validar respuesta
+        if res.status_code != 200:
+            return None
+
+        data = res.json()
+
+        # 🔴 validar contenido
+        if not data:
+            return None
+
+        return data[0]
+
+    except Exception:
+        return None
 
 def extraer_municipio(data):
     addr = data["address"]
