@@ -14,13 +14,11 @@ def preguntar_llm(prompt):
         messages=[
             {
                 "role": "system",
-                "content": """
+                "content":"content": """
 Eres un ingeniero agrónomo experto en México.
-
-Das recomendaciones claras, prácticas y accionables.
-Usas clima, rendimiento y riesgo para tomar decisiones.
-"""
-            },
+Das recomendaciones claras, prácticas y profesionales.
+No inventas datos.
+"""},
             {"role": "user", "content": prompt}
         ],
         temperature=0.4,
@@ -437,24 +435,40 @@ if st.session_state.df_res is not None:
             row = df_res[df_res["cultivo"] == cultivo_final].iloc[0]
 
             prompt = f"""
-    Cultivo: {cultivo_final}
-    Ubicación: {municipio}, {estado}
+Eres un ingeniero agrónomo experto en México.
 
-    Condiciones actuales:
-    Temperatura: {actual['temp']} °C
-    Precipitación anual: {clima['precip_total']} mm
+Tu tarea es tomar una decisión clara basada en:
+- resultados del modelo (rendimiento y riesgo)
+- conocimiento agrícola general de México
 
-    Rendimiento esperado: {row['rendimiento']}
-    Riesgo: {row['riesgo']}
+Reglas IMPORTANTES:
+- NO repitas tablas ni datos completos
+- Sé breve (máximo 5-6 líneas)
+- NO inventes datos específicos (precios, rankings exactos, etc.)
+- Puedes usar conocimiento general (ej: cultivos comunes en la región, facilidad de comercialización, demanda típica)
+- Si no estás seguro de un dato, no lo afirmes
 
-    Explica:
-    - condiciones óptimas
-    - qué tan adecuadas son las actuales
-    - plagas comunes
-    - recomendaciones prácticas
+Contexto:
+Ubicación: {municipio}, {estado}
 
-    Termina con una pregunta para el usuario.
-    """
+Resultados del modelo:
+{top[['cultivo','rendimiento','riesgo','score']].to_string()}
+
+Instrucciones:
+
+1. Elige el mejor cultivo
+2. Explica brevemente por qué (modelo + contexto agrícola)
+3. Si aplica, menciona algo relevante como:
+   - facilidad de venta
+   - uso común en la región
+   - nivel de manejo requerido
+4. Da una segunda opción
+5. Termina preguntando:
+
+"¿Te gustaría irte por esta opción o prefieres analizar otra?"
+
+NO agregues texto extra.
+"""
 
             with st.spinner("🌱 Analizando cultivo..."):
                 respuesta = preguntar_llm(prompt)
