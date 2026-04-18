@@ -185,7 +185,7 @@ def obtener_cultivos_municipio(municipio):
 
     m = limpiar_texto(municipio)
 
-    cults = df_hist[df_hist["municipio_clean"] == m]["nomcultivo"].unique()
+    cults = df_hist[df_hist["municipio_clean"] == m]["cultivo"].unique()
 
     if len(cults) == 0:
         return cultivos  # fallback 🔥
