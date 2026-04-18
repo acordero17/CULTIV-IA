@@ -95,24 +95,10 @@ def obtener_datos_ubicacion(ubicacion):
         "addressdetails": 1
     }
 
-    headers = {
-        "User-Agent": "cultiv-ia"
-    }
-
     try:
-        res = requests.get(url, params=params, headers=headers, timeout=10)
-
-        # 🔴 validar respuesta
-        if res.status_code != 200:
-            return None
-
+        res = requests.get(url, params=params, timeout=10)
         data = res.json()
-
-        # 🔴 validar contenido
-        if not data:
-            return None
-
-        return data[0]
+        return data[0] if data else None
 
     except Exception:
         return None
