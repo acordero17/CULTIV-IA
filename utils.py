@@ -137,9 +137,9 @@ def clasificar_rendimiento(r):
 # 🚀 MAIN
 # =========================
 
-def recomendar_cultivos(input_base, top_n=None):
+def recomendar_cultivos(input_base, municipio, top_n=None):
 
-    df = preparar_input_modelo_batch(input_base)
+    df, cultivos_validos = preparar_input_modelo_batch(input_base, municipio)
 
     mean, low, high = bootstrap_predictions(df)
 
@@ -149,8 +149,8 @@ def recomendar_cultivos(input_base, top_n=None):
     tipos = obtener_tipo_cultivo_batch()
 
     resultados = pd.DataFrame({
-        "cultivo": cultivos,
-        "tipo_cultivo": [tipos.get(c, "otro") for c in cultivos],
+        "cultivo": cultivos_validos,  # 🔥 importante
+        "tipo_cultivo": [tipos.get(c, "otro") for c in cultivos_validos],
         "rendimiento": mean,
         "low": low,
         "high": high,
