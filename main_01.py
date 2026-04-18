@@ -88,16 +88,11 @@ def obtener_forecast(lat, lon):
 
 def obtener_datos_ubicacion(ubicacion):
     url = "https://nominatim.openstreetmap.org/search"
-
-    params = {
-        "q": ubicacion,
-        "format": "json",
-        "addressdetails": 1
-    }
+    params = {"q": ubicacion, "format": "json", "addressdetails": 1}
 
     try:
-        res = requests.get(url, params=params, timeout=10)
-        data = res.json()
+        res = requests.get(url, params=params)
+        data = res.json()  # igual que antes
         return data[0] if data else None
 
     except Exception:
