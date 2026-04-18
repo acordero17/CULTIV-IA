@@ -460,20 +460,24 @@ INSTRUCCIONES:
 Cultivo: {cultivo_top['cultivo']}
 Ubicación: {municipio}, {estado}
 
-Condiciones actuales:
-Temp: {actual['temp']} °C
-Precipitación: {clima['precip_total']} mm
+Explica de forma clara y práctica:
 
-Rendimiento: {cultivo_top['rendimiento']}
-Riesgo: {cultivo_top['riesgo']}
-
-Explica:
 - condiciones óptimas
-- comparación con actuales
+- comparación con las actuales
 - plagas comunes
-- recomendaciones prácticas
+- recomendaciones
 
-Termina preguntando si necesita más ayuda.
+REGLAS OBLIGATORIAS:
+- Máximo 8 líneas
+- NO hacer texto largo tipo reporte
+- Sé directo y útil
+
+IMPORTANTE:
+La última línea DEBE ser EXACTAMENTE esta pregunta:
+
+"¿Hay algo más que quieras analizar o mejorar?"
+
+NO agregues nada después de esa pregunta.
 """
 
                 with st.spinner("🌱 Analizando cultivo..."):
@@ -535,13 +539,24 @@ Precipitación: {clima['precip_total']} mm
 Rendimiento: {row['rendimiento']}
 Riesgo: {row['riesgo']}
 
-Explica:
-- condiciones óptimas
-- comparación con actuales
-- plagas
-- recomendaciones prácticas
+Explica de forma clara y práctica:
 
-Termina preguntando si necesita más ayuda.
+- condiciones óptimas
+- comparación con las actuales
+- plagas comunes
+- recomendaciones
+
+REGLAS OBLIGATORIAS:
+- Máximo 8 líneas
+- NO hacer texto largo tipo reporte
+- Sé directo y útil
+
+IMPORTANTE:
+La última línea DEBE ser EXACTAMENTE esta pregunta:
+
+"¿Hay algo más que quieras analizar o mejorar?"
+
+NO agregues nada después de esa pregunta.
 """
 
         with st.spinner("🌱 Analizando cultivo..."):
