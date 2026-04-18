@@ -123,3 +123,27 @@ def predecir_cultivo(input_dict, cultivo):
     pred = model_reg.predict(df)[0]
 
     return float(pred)
+def predecir_con_incertidumbre(input_dict, cultivo):
+
+    import numpy as np
+
+    input_dict = input_dict.copy()
+    input_dict["nomcultivo"] = cultivo
+
+    df = preparar_input_modelo(input_dict)
+
+    # 🔥 usamos árboles directamente (rápido)
+    preds = [tree.predict(df)[0] for tree in model_reg.estimators_]
+
+    mean = float(np.mean(preds))
+    std = float(np.std(preds))
+
+    low = max(0, mean - std)
+    high = mean + std
+
+    return {
+        "mean": mean,
+        "low": low,
+        "high": high,
+        "riesgo": std
+    }
