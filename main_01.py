@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 import unicodedata
 
-from utils import recomendar_cultivos
+from utils import recomendar_cultivos, predecir_cultivo
 
 # =========================
 # CONFIG
@@ -203,14 +203,12 @@ if st.button("Analizar"):
 if st.session_state.df_res is not None:
 
     df_res = st.session_state.df_res
-    cluster = st.session_state.cluster
     municipio, estado, lat, lon = st.session_state.ubicacion_data
     input_dict = st.session_state.input_base
 
     st.success(f"{municipio}, {estado}")
     st.map(pd.DataFrame({"lat": [lat], "lon": [lon]}))
 
-    # selector
     modo = st.radio(
         "¿Qué prefieres?",
         ["🌾 Mayor rendimiento", "🧠 Mayor estabilidad"],
@@ -246,16 +244,13 @@ if st.session_state.df_res is not None:
         st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
 
     # =========================
-    # WHAT IF PRO
+    # WHAT IF RÁPIDO
     # =========================
 
     st.markdown("---")
-    st.subheader("🧪 Simulación Agronómica")
+    st.subheader("🧪 Simulación rápida por cultivo")
 
-    escenario = st.selectbox(
-        "Escenario climático",
-        ["Base", "🌵 Sequía", "🔥 Ola de calor", "🌧️ Lluvias intensas"]
-    )
+    cultivo_sel = st.selectbox("Selecciona cultivo", df_res["cultivo"].unique())
 
     col1, col2 = st.columns(2)
 
@@ -267,80 +262,22 @@ if st.session_state.df_res is not None:
 
     input_sim = input_dict.copy()
 
-    if escenario == "🌵 Sequía":
-        input_sim["precip_total"] *= 0.6
-
-    elif escenario == "🔥 Ola de calor":
-        input_sim["temp_avg"] += 5
-        input_sim["temp_min"] += 5
-        input_sim["temp_max"] += 5
-
-    elif escenario == "🌧️ Lluvias intensas":
-        input_sim["precip_total"] *= 1.5
-
     input_sim["temp_avg"] += delta_temp
     input_sim["temp_min"] += delta_temp
     input_sim["temp_max"] += delta_temp
-
     input_sim["precip_total"] *= (1 + delta_precip / 100)
 
-    df_sim, _ = recomendar_cultivos(input_sim)
-
-    if modo == "🌾 Mayor rendimiento":
-        df_sim = df_sim.sort_values(by="rendimiento", ascending=False)
-    else:
-        df_sim = df_sim.sort_values(by="score", ascending=False)
-
-    st.subheader("📊 Impacto")
-
-    df_compare = df_res[["cultivo", "rendimiento"]].merge(
-        df_sim[["cultivo", "rendimiento"]],
-        on="cultivo",
-        suffixes=("_base", "_sim")
-    )
-
-    df_compare["delta"] = df_compare["rendimiento_sim"] - df_compare["rendimiento_base"]
-
-    st.bar_chart(df_compare.set_index("cultivo")[["rendimiento_base", "rendimiento_sim"]])
-
-    # =========================
-    # ANÁLISIS POR CULTIVO
-    # =========================
-
-    cultivo_sel = st.selectbox("Analizar cultivo", df_res["cultivo"].unique())
-
     base_row = df_res[df_res["cultivo"] == cultivo_sel].iloc[0]
-    sim_row = df_sim[df_sim["cultivo"] == cultivo_sel].iloc[0]
+    base_val = base_row["rendimiento"]
+
+    sim_val = predecir_cultivo(input_sim, cultivo_sel)
+
+    delta = sim_val - base_val
 
     col1, col2, col3 = st.columns(3)
 
-    col1.metric("Base", f"{base_row['rendimiento']:.1f}")
-    col2.metric("Simulado", f"{sim_row['rendimiento']:.1f}")
-    col3.metric("Cambio", f"{sim_row['rendimiento'] - base_row['rendimiento']:.1f}")
+    col1.metric("Base", f"{base_val:.1f}")
+    col2.metric("Simulado", f"{sim_val:.1f}")
+    col3.metric("Cambio", f"{delta:.1f}")
 
-    # =========================
-    # SENSIBILIDAD
-    # =========================
-
-    st.subheader("📈 Sensibilidad a temperatura")
-
-    temps = list(range(-5, 6))
-    results = []
-
-    for t in temps:
-        temp_input = input_dict.copy()
-        temp_input["temp_avg"] += t
-        temp_input["temp_min"] += t
-        temp_input["temp_max"] += t
-
-        df_temp, _ = recomendar_cultivos(temp_input)
-
-        val = df_temp[df_temp["cultivo"] == cultivo_sel]["rendimiento"].values[0]
-        results.append(val)
-
-    df_temp_curve = pd.DataFrame({
-        "delta_temp": temps,
-        "rendimiento": results
-    })
-
-    st.line_chart(df_temp_curve.set_index("delta_temp"))
+    st.caption("Simulación individual para análisis rápido ⚡")
