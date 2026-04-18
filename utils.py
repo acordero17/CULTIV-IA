@@ -167,7 +167,7 @@ def recomendar_cultivos(input_base, top_n=None):
         resultados = resultados.head(top_n)
 
     return resultados, cluster
-df_hist = pd.read_csv("modelos/cultivos_municipio.csv")
+df_hist = pd.read_csv("modelos/filtro.csv")
 
 def limpiar_texto(texto):
     import unicodedata
