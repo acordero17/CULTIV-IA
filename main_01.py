@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 import unicodedata
 from openai import OpenAI
-from utils import recomendar_cultivos
+from utils import recomendar_cultivos,construir_df_economico, cargar_costos, get_info_cultivo
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
@@ -298,6 +298,11 @@ if st.button("Analizar"):
         input_dict.update(suelo)
 
         df_res, cluster = recomendar_cultivos(input_dict, municipio)
+        # 🔥 ECONÓMICO
+        df_costos = cargar_costos()
+        df_economico = construir_df_economico(df_res, df_costos)
+
+        st.session_state.df_economico = df_economico
 
         # guardar
         st.session_state.df_res = df_res
@@ -377,6 +382,38 @@ if st.session_state.df_res is not None:
         col3.metric("🧠 Score", f"{row['score']:.1f}")
 
         st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
+        # 🔥 ECONÓMICO
+        if "df_economico" in st.session_state:
+
+            df_econ = st.session_state.df_economico
+
+            cultivo_nombre = row["cultivo"].lower().strip()
+
+            row_econ = df_econ[
+                df_econ["nomcultivo"] == cultivo_nombre
+            ]
+
+            if not row_econ.empty:
+
+                costo = row_econ["costo_promedio"].values[0]
+                precio = row_econ["precio"].values[0]
+
+                if pd.notna(costo) and pd.notna(precio):
+
+            # 👉 ganancia por ha
+                    ingreso = row["rendimiento"] * precio
+                    ganancia = ingreso - costo
+
+                    if ganancia > 0:
+                        st.success(f"💰 Ganancia estimada: ${ganancia:,.0f} / ha")
+                    else:
+                        st.error(f"📉 Pérdida estimada: ${ganancia:,.0f} / ha")
+
+                else:
+                    st.warning("⚠️ No se tiene el dato del costo actual")
+
+            else:
+                st.warning("⚠️ No se tiene el dato del costo actual")
 
     # 🔬 WHAT-IF
     st.subheader("🔬 What-if (simulación rápida)")
