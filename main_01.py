@@ -440,7 +440,7 @@ if st.session_state.df_res is not None:
         input_mod["temp_min"] += temp_delta
         input_mod["precip_total"] *= (1 + precip_delta / 100)
 
-        df_new, _ = recomendar_cultivos(input_mod)
+        df_new, _ = recomendar_cultivos(input_mod,municipio)
 
         row_new = df_new[df_new["cultivo"] == cultivo_sel].iloc[0]
 
