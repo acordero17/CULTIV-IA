@@ -589,6 +589,12 @@ Termina con:
 
 else:
 
+    if st.session_state.df_res is None:
+        st.warning("👆 Primero analiza una ubicación")
+        st.stop()
+
+    df_res = st.session_state.df_res
+
     cultivo_final = st.selectbox(
         "🌱 ¿Qué cultivo elegiste?",
         df_res["cultivo"]
