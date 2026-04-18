@@ -78,7 +78,7 @@ def clasificar_rendimiento(r):
 # 🚀 MAIN
 # =========================
 
-def recomendar_cultivos(input_base, hectareas):
+def recomendar_cultivos(input_base, top_n=None):
 
     resultados = []
 
@@ -94,15 +94,14 @@ def recomendar_cultivos(input_base, hectareas):
 
             preds = [tree.predict(df)[0] for tree in model_reg.estimators_]
 
-            mean = np.mean(preds)
-            low = np.percentile(preds, 10)
-            high = np.percentile(preds, 90)
+            mean = float(np.mean(preds))
+            low = float(np.percentile(preds, 10))
+            high = float(np.percentile(preds, 90))
 
-            score = mean - (high - low)
+            riesgo = high - low
+            score = mean - riesgo
 
-            # 🔥 nueva clasificación
             clase = clasificar_rendimiento(mean)
-
             tipo = obtener_tipo_cultivo(cultivo)
 
             resultados.append({
@@ -111,6 +110,7 @@ def recomendar_cultivos(input_base, hectareas):
                 "rendimiento": mean,
                 "low": low,
                 "high": high,
+                "riesgo": riesgo,
                 "clasificacion": clase,
                 "cluster": cluster,
                 "score": score
@@ -121,9 +121,15 @@ def recomendar_cultivos(input_base, hectareas):
 
     df_res = pd.DataFrame(resultados)
 
-    if len(df_res) == 0:
+    if df_res.empty:
         return None, cluster
 
-    df_res = df_res.sort_values("score", ascending=False)
+    # asegurar tipos
+    cols = ["rendimiento", "low", "high", "riesgo", "score"]
+    for col in cols:
+        df_res[col] = pd.to_numeric(df_res[col], errors="coerce")
 
-    return df_res.head(5), cluster
+    # orden base por score (default)
+    df_res = df_res.sort_values(by="score", ascending=False)
+
+    return df_res, cluster
