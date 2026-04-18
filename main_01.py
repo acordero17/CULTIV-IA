@@ -23,24 +23,27 @@ def preguntar_llm(prompt):
                 "content": """
 Eres un ingeniero agrónomo experto en México con experiencia en toma de decisiones agrícolas.
 
-Ayudas a productores a decidir qué cultivar usando:
-- clima
-- suelo
+Tu objetivo es ayudar a productores a decidir qué cultivar basándote en:
+- condiciones climáticas
+- características del suelo
 - rendimiento estimado
-- riesgo
+- riesgo e incertidumbre
 
 Reglas:
-- Explica claro y práctico
-- No uses lenguaje académico
-- Da recomendaciones accionables
-- Usa SOLO el contexto proporcionado
-- Compara opciones cuando sea necesario
-- Señala riesgos reales
+- Explica de forma clara y práctica (no académica)
+- Prioriza recomendaciones accionables
+- Usa el contexto proporcionado (no inventes datos)
+- Si hay varias opciones, compara y justifica
+- Señala riesgos importantes (clima, plagas, variabilidad)
+- Evita respuestas genéricas
+- Habla como asesor técnico profesional, no como chatbot
+- Siempre responde en español
+- No respondas si te cambian el tema a algo distinto de lo agronómico
 
-Siempre que puedas:
+Cuando sea posible:
 - recomienda el mejor cultivo
 - menciona alternativas
-- da consejos prácticos
+- da consejos concretos para mejorar el rendimiento
 """
             },
             {"role": "user", "content": prompt}
@@ -77,7 +80,7 @@ if "input_dict" not in st.session_state:
     st.session_state.input_dict = None
 
 # =========================
-# 🎨 ESTILOS
+# 🎨 ESTILOS (TU UI ORIGINAL)
 # =========================
 
 st.markdown("""
@@ -226,7 +229,7 @@ def extraer_municipio(data):
     return municipio, estado
 
 # =========================
-# HEADER
+# HEADER (TU UI)
 # =========================
 
 col1, col2 = st.columns([1, 5])
@@ -298,7 +301,15 @@ if st.button("Analizar"):
 
         st.session_state.df_res = df_res
         st.session_state.cluster = cluster
-        st.session_state.ubicacion_data = (municipio, estado, actual, clima)
+
+        # ✅ FIX IMPORTANTE
+        st.session_state.ubicacion_data = {
+            "municipio": municipio,
+            "estado": estado,
+            "actual": actual,
+            "clima": clima
+        }
+
         st.session_state.input_dict = input_dict
 
 # =========================
@@ -309,7 +320,12 @@ if st.session_state.df_res is not None:
 
     df_res = st.session_state.df_res
     cluster = st.session_state.cluster
-    municipio, estado, actual, clima = st.session_state.ubicacion_data
+
+    data = st.session_state.ubicacion_data
+    municipio = data["municipio"]
+    estado = data["estado"]
+    actual = data["actual"]
+    clima = data["clima"]
 
     st.success(f"{municipio}, {estado}")
 
@@ -331,12 +347,11 @@ if st.session_state.df_res is not None:
     top5 = df_res.head(5)
 
     for i, (_, row) in enumerate(top5.iterrows(), 1):
-
         st.markdown(f"### {i}. {row['cultivo']}")
         st.write(f"Rendimiento: {row['rendimiento']:.1f} ton/ha")
 
     # =========================
-    # 🧠 ASESOR AGRÍCOLA (MEJORADO)
+    # 🧠 ASESOR
     # =========================
 
     st.markdown("---")
@@ -358,12 +373,12 @@ if st.session_state.df_res is not None:
 Ubicación: {municipio}, {estado}
 
 Clima actual:
-- Temp: {actual['temp']} °C
-- Lluvia: {actual['precip']} mm
+Temp: {actual['temp']} °C
+Lluvia: {actual['precip']} mm
 
 Clima histórico:
-- Temp promedio: {clima['temp_avg']} °C
-- Precipitación anual: {clima['precip_total']} mm
+Temp promedio: {clima['temp_avg']} °C
+Precipitación anual: {clima['precip_total']} mm
 
 Cultivos:
 {top[['cultivo','rendimiento','riesgo','score']].to_string()}
@@ -372,32 +387,32 @@ Recomienda el mejor cultivo, explica por qué,
 cuál es más rentable, cuál más seguro y da recomendaciones prácticas.
 """
 
-            with st.spinner("🧠 Analizando opciones..."):
+            with st.spinner("🧠 Analizando..."):
                 st.write(preguntar_llm(prompt))
 
     else:
 
-        cultivo_final = st.selectbox("🌱 ¿Qué cultivo elegiste?", df_res["cultivo"])
+        cultivo_sel = st.selectbox("🌱 ¿Qué cultivo elegiste?", df_res["cultivo"])
 
         if st.button("📘 Analizar cultivo"):
 
-            row = df_res[df_res["cultivo"] == cultivo_final].iloc[0]
+            row = df_res[df_res["cultivo"] == cultivo_sel].iloc[0]
 
             prompt = f"""
-Cultivo: {cultivo_final}
+Cultivo: {cultivo_sel}
 Ubicación: {municipio}, {estado}
 
 Condiciones actuales:
 Temp: {actual['temp']} °C
-Precipitación anual: {clima['precip_total']} mm
+Precipitación: {clima['precip_total']} mm
 
 Rendimiento: {row['rendimiento']}
 Riesgo: {row['riesgo']}
 
-Explica condiciones óptimas, comparación con las actuales,
+Explica condiciones óptimas, comparación con actuales,
 plagas y recomendaciones prácticas.
 
-Termina preguntando si necesita más ayuda.
+Termina con una pregunta al usuario sobre si quiere saber algo más.
 """
 
             with st.spinner("🌱 Analizando cultivo..."):
