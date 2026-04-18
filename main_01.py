@@ -251,7 +251,3 @@ if st.session_state.df_res is not None:
         col3.metric("🧠 Score", f"{row['score']:.1f}")
 
         st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
-        col2.metric("⚠️ Riesgo", f"{riesgo:.1f}")
-        col3.metric("🧠 Score", f"{row['score']:.1f}")
-
-        st.caption(f"Rango: {row['low']:.1f} – {row['high']:.1f}")
