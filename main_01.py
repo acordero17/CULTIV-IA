@@ -14,7 +14,7 @@ def preguntar_llm(prompt):
         messages=[
             {
                 "role": "system",
-                "content":"content": """
+                "content": """
 Eres un ingeniero agrónomo experto en México.
 Das recomendaciones claras, prácticas y profesionales.
 No inventas datos.
