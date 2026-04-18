@@ -2,8 +2,8 @@ import streamlit as st
 import requests
 import pandas as pd
 import unicodedata
-from utils import recomendar_cultivos
 from openai import OpenAI
+from utils import recomendar_cultivos
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
