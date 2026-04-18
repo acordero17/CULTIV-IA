@@ -300,7 +300,15 @@ if st.button("Analizar"):
         df_res, cluster = recomendar_cultivos(input_dict, municipio)
         # 🔥 ECONÓMICO
         df_costos = cargar_costos()
-        df_economico = construir_df_economico(df_modelo, df_costos)
+        df_costos["nomcultivo"] = df_costos["nomcultivo"].str.lower().str.strip()
+        df_precios = pd.read_csv("modelos/precios.csv")
+        df_precios["nomcultivo"] = df_precios["nomcultivo"].str.lower().str.strip()
+
+        df_economico = df_costos.merge(
+            df_precios,
+            on="nomcultivo",
+            how="left"
+        )
 
         st.session_state.df_economico = df_economico
 
